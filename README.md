@@ -21,3 +21,9 @@ This repository contains a PowerShell script designed to automate the installati
 4. Run the following command to execute the setup script:
    ```powershell
    .\install-chromeos.ps1
+
+## File Structure:
+<img width="189" alt="{9E8CD945-8F28-4665-A985-48BAAFA8AB78}" src="https://github.com/user-attachments/assets/c9e1611d-0dea-4f6c-ab15-e1158ef8aa65">
+
+
+
