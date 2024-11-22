@@ -15,7 +15,7 @@ This repository contains a PowerShell script designed to automate the installati
 - Sufficient storage space for the installation files.
 
 ## Installation Instructions:
-1. Download the latest release from the [GitHub Releases Page](https://github.com/yourusername/chrome-os-setup-script/releases).
+1. Download the latest release from the [GitHub Releases Page](https://github.com/bobanilic/chromeos-installer/releases).
 2. Extract the contents of the release to a folder on your machine.
 3. Open PowerShell as Administrator and navigate to the extracted folder.
 4. Run the following command to execute the setup script:
