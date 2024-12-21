@@ -98,17 +98,10 @@ Write-Host ""
 #Requires -Version 5.1
 #Requires -RunAsAdministrator
 
-[CmdletBinding()]
-param(
-    [Parameter(Mandatory=$false)]
-    [switch]$Debug,
-    
-    [Parameter(Mandatory=$false)]
-    [switch]$SkipDiskCheck,
-    
-    [Parameter(Mandatory=$false)]
-    [string]$RecoveryUrl
-)
+# Script parameters
+$Debug = $false
+$SkipDiskCheck = $false
+$RecoveryUrl = ""
 
 # Script initialization
 Set-StrictMode -Version Latest
@@ -452,7 +445,7 @@ function Get-SystemProcessor {
 
         # Extract Intel generation
         if ($processorName -match "Intel.*i[3579]-(\d{4,5})|Intel.*i[3579]\s+(\d{4,5})") {
-            $model = $matches[1] ?? $matches[2]
+            $model = if ($matches[1]) { $matches[1] } else { $matches[2] }
             $generation = [int]($model.ToString()[0])
             
             $device = switch ($generation) {
@@ -578,7 +571,7 @@ function Get-ChromeOSBuilds {
         return $builds
     }
     catch {
-        Write-InstallLog "Failed to fetch builds for $Device: $_" -Level 'Error'
+        Write-InstallLog ("Failed to fetch builds for {0}: {1}" -f $Device, $_.Exception.Message) -Level 'Error'
         throw
     }
 }
