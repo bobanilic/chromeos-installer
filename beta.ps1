@@ -293,7 +293,8 @@ function Show-Banner {
 function Test-SystemRequirements {
     Write-InstallLog "Checking system requirements..." -Level 'Info'
     
-    $requirements = [PSCustomObject]@{
+    # Create a custom object with IsValid property
+    $requirements = New-Object PSObject -Property @{
         IsValid = $true
         Details = @{
             AdminRights = @{
@@ -322,8 +323,9 @@ function Test-SystemRequirements {
     try {
         # Check Admin Rights
         $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
-        $requirements.Details.AdminRights.Current = if ($currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { "Administrator" } else { "User" }
-        $requirements.Details.AdminRights.Pass = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        $adminStatus = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+        $requirements.Details.AdminRights.Current = if ($adminStatus) { "Administrator" } else { "User" }
+        $requirements.Details.AdminRights.Pass = $adminStatus
 
         # Check RAM
         $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
@@ -341,9 +343,10 @@ function Test-SystemRequirements {
         $requirements.Details.Architecture.Current = $arch
         $requirements.Details.Architecture.Pass = $arch -eq "64-bit"
 
-        # Update IsValid based on all checks
+        # Set IsValid based on all requirements passing
         $requirements.IsValid = -not ($requirements.Details.Values | Where-Object { -not $_.Pass })
 
+        Write-InstallLog "System requirements check completed. IsValid: $($requirements.IsValid)" -Level 'Info'
         return $requirements
     }
     catch {
@@ -362,10 +365,10 @@ function Test-Prerequisites {
         
         if (-not $requirements.IsValid) {
             Write-Host "`nSystem requirements not met:" -ForegroundColor Red
-            foreach ($req in $requirements.Details.GetEnumerator()) {
-                $status = if ($req.Value.Pass) { "PASS" } else { "FAIL" }
-                $color = if ($req.Value.Pass) { "Green" } else { "Red" }
-                Write-Host "$($req.Key): [$status] - Required: $($req.Value.Required), Current: $($req.Value.Current)" -ForegroundColor $color
+            $requirements.Details.GetEnumerator() | ForEach-Object {
+                $status = if ($_.Value.Pass) { "PASS" } else { "FAIL" }
+                $color = if ($_.Value.Pass) { "Green" } else { "Red" }
+                Write-Host "$($_.Key): [$status] - Required: $($_.Value.Required), Current: $($_.Value.Current)" -ForegroundColor $color
             }
             return $false
         }
@@ -374,7 +377,7 @@ function Test-Prerequisites {
         Write-InstallLog "Detecting system processor..." -Level 'Info'
         $processor = Get-SystemProcessor
         if (-not $processor.Supported) {
-            Write-Host "Unsupported processor: $($processor.Name)" -ForegroundColor Red
+            Write-Host "`nUnsupported processor: $($processor.Name)" -ForegroundColor Red
             return $false
         }
 
@@ -382,7 +385,7 @@ function Test-Prerequisites {
         Write-InstallLog "Scanning for available disks..." -Level 'Info'
         $disks = Get-AvailableDisks
         if (-not $disks) {
-            Write-Host "No suitable disks found for installation." -ForegroundColor Red
+            Write-Host "`nNo suitable disks found for installation." -ForegroundColor Red
             return $false
         }
 
