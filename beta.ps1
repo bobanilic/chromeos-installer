@@ -19,12 +19,13 @@ foreach ($path in $Global:CONFIG.Paths.Values) {
 }
 
 # Initial environment check
-Write-Host "ChromeOS Installer - Environment Check" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Time: $(Get-Date)" -ForegroundColor Gray
-Write-Host "User: $env:USERNAME" -ForegroundColor Gray
-Write-Host "Directory: $PWD" -ForegroundColor Gray
-Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "+====================================================+" -ForegroundColor Cyan
+Write-Host "|             ChromeOS Installer - Environment Check   |" -ForegroundColor Cyan
+Write-Host "+====================================================+" -ForegroundColor Cyan
+Write-Host "| Time: $(Get-Date)".PadRight(52) + "|" -ForegroundColor Gray
+Write-Host "| User: $env:USERNAME".PadRight(52) + "|" -ForegroundColor Gray
+Write-Host "| Directory: $PWD".PadRight(52) + "|" -ForegroundColor Gray
+Write-Host "+====================================================+" -ForegroundColor Cyan
 
 # Set console encoding to UTF-8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -295,7 +296,7 @@ function Show-InstallationMenu {
 | 2. Custom Installation                              |
 | 3. Verify System Requirements                       |
 | 4. Show Available Disks                             |
-| 5. Exit                                            |
+| 5. Exit                                             |
 +====================================================+
 "@
     Write-Host $menu -ForegroundColor Cyan
@@ -1452,33 +1453,51 @@ function Start-ChromeOSInstallation {
             throw "Failed to initialize working environment"
         }
 
-        # Check system requirements
-        $requirements = Test-SystemRequirements
-        if (-not $requirements.IsValid) {
-            throw "System requirements not met. Please check the log for details."
-        }
-
-        # Show menu and get user choice
-        $choice = Show-InstallationMenu
-        
-        switch ($choice) {
-            '1' { 
-                Write-Host "`nStarting automatic installation..." -ForegroundColor Cyan
-                $build = Select-ChromeOSBuild -ForceLatest
-                $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
-                # Continue with installation...
+        # Main menu loop
+        do {
+            $choice = Show-InstallationMenu
+            
+            switch ($choice) {
+                '1' { 
+                    Write-Host "`nStarting automatic installation..." -ForegroundColor Cyan
+                    $build = Select-ChromeOSBuild -ForceLatest
+                    $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+                    Write-Host "Auto installation complete!" -ForegroundColor Green
+                }
+                '2' { 
+                    Write-Host "`nStarting custom installation..." -ForegroundColor Cyan
+                    $build = Select-ChromeOSBuild -Interactive
+                    $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+                    Write-Host "Custom installation complete!" -ForegroundColor Green
+                }
+                '3' {
+                    Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
+                    $requirements = Test-SystemRequirements
+                    Write-Host "`nSystem Requirements Check Results:" -ForegroundColor Yellow
+                    $requirements.Details.GetEnumerator() | ForEach-Object {
+                        $status = if ($_.Value.Pass) { "PASS" } else { "FAIL" }
+                        $color = if ($_.Value.Pass) { "Green" } else { "Red" }
+                        Write-Host "$($_.Key): [$status] - Required: $($_.Value.Required), Current: $($_.Value.Current)" -ForegroundColor $color
+                    }
+                    Read-Host "`nPress Enter to continue"
+                }
+                '4' {
+                    Write-Host "`nScanning for available disks..." -ForegroundColor Cyan
+                    $disks = Get-AvailableDisks
+                    if ($disks) {
+                        Write-Host "`nAvailable Disks:" -ForegroundColor Yellow
+                        $disks | Format-Table -AutoSize
+                    } else {
+                        Write-Host "No suitable disks found!" -ForegroundColor Red
+                    }
+                    Read-Host "`nPress Enter to continue"
+                }
+                '5' { 
+                    Write-Host "Exiting..." -ForegroundColor Yellow
+                    exit 0 
+                }
             }
-            '2' { 
-                Write-Host "`nStarting custom installation..." -ForegroundColor Cyan
-                $build = Select-ChromeOSBuild -Interactive
-                $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
-                # Continue with installation...
-            }
-            '3' { 
-                Write-Host "Exiting..." -ForegroundColor Yellow
-                exit 0 
-            }
-        }
+        } while ($true)
     }
     catch {
         Write-InstallLog "Installation failed: $_" -Level 'Error'
