@@ -1624,32 +1624,50 @@ function Start-ChromeOSInstallation {
                 
                 '3' {
                     try {
-                        Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
-                        $requirements = Test-SystemRequirements
-                        
                         Write-Host "`nSystem Requirements Check:" -ForegroundColor Yellow
-                        
-                        foreach ($req in $requirements.Requirements.GetEnumerator()) {
-                            Write-Host "$($req.Key): $(if ($req.Value.Pass) { "[PASS]" } else { "[FAIL]" }) - Required: $($req.Value.Required), Current: $($req.Value.Current)" -ForegroundColor $(if ($req.Value.Pass) { "Green" } else { "Red" })
-                        }
-                        
-                        Write-Host "`nOverall Status: $(if ($requirements.IsValid) { "[PASS]" } else { "[FAIL]" })" -ForegroundColor $(if ($requirements.IsValid) { "Green" } else { "Red" })
-                        
-                        # Show processor compatibility
-                        Write-Host "`nChecking processor compatibility..." -ForegroundColor Cyan
+                        Write-Host "-------------------------" -ForegroundColor Yellow
+
+                        # Admin Rights
+                        $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+                        Write-Host "Admin Rights: $(if ($isAdmin) { "[PASS]" } else { "[FAIL]" })" -ForegroundColor $(if ($isAdmin) { "Green" } else { "Red" })
+
+                        # RAM
+                        $ram = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 2)
+                        Write-Host "RAM: $(if ($ram -ge 4) { "[PASS]" } else { "[FAIL]" }) ($ram GB / 4 GB required)" -ForegroundColor $(if ($ram -ge 4) { "Green" } else { "Red" })
+
+                        # Disk Space
+                        $freeSpace = [math]::Round((Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'").FreeSpace / 1GB, 2)
+                        Write-Host "Free Space: $(if ($freeSpace -ge 16) { "[PASS]" } else { "[FAIL]" }) ($freeSpace GB / 16 GB required)" -ForegroundColor $(if ($freeSpace -ge 16) { "Green" } else { "Red" })
+
+                        # Architecture
+                        $arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
+                        Write-Host "Architecture: $(if ($arch -eq "64-bit") { "[PASS]" } else { "[FAIL]" }) ($arch)" -ForegroundColor $(if ($arch -eq "64-bit") { "Green" } else { "Red" })
+
+                        # Overall Status
+                        $allPassed = $isAdmin -and ($ram -ge 4) -and ($freeSpace -ge 16) -and ($arch -eq "64-bit")
+                        Write-Host "`nOverall Status: $(if ($allPassed) { "[PASS]" } else { "[FAIL]" })" -ForegroundColor $(if ($allPassed) { "Green" } else { "Red" })
+
+                        # Processor Info
+                        Write-Host "`nProcessor Information:" -ForegroundColor Cyan
                         $processor = Get-SystemProcessor
                         if ($processor.IsValid) {
-                            Write-Host "Processor: $($processor.Name)" -ForegroundColor Yellow
-                            Write-Host "Compatible Device: $($processor.Device)" -ForegroundColor Yellow
-                            Write-Host "Supported: $(if ($processor.Supported) { 'Yes' } else { 'No' })" -ForegroundColor $(if ($processor.Supported) { "Green" } else { "Red" })
+                            Write-Host "Type: $($processor.Name)"
+                            Write-Host "Device: $($processor.Device)"
+                            Write-Host "Status: $(if ($processor.Supported) { "[SUPPORTED]" } else { "[NOT SUPPORTED]" })" -ForegroundColor $(if ($processor.Supported) { "Green" } else { "Red" })
                         }
-                        else {
-                            Write-Host "Failed to detect processor information" -ForegroundColor Red
+
+                        # Available Disks
+                        Write-Host "`nAvailable Disks:" -ForegroundColor Cyan
+                        $diskInfo = Get-AvailableDisks
+                        if ($diskInfo.IsValid -and $diskInfo.Disks.Count -gt 0) {
+                            $diskInfo.Disks | Format-Table -AutoSize
+                        } else {
+                            Write-Host "No suitable disks found" -ForegroundColor Red
                         }
                     }
                     catch {
-                        Write-InstallLog "System requirements check failed: $_" -Level 'Error'
-                        Write-Host "Failed to check system requirements" -ForegroundColor Red
+                        Write-InstallLog "System check failed: $_" -Level 'Error'
+                        Write-Host "`nError during system check: $_" -ForegroundColor Red
                     }
                     finally {
                         Read-Host "`nPress Enter to continue"
