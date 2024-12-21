@@ -19,12 +19,12 @@ foreach ($path in $Global:CONFIG.Paths.Values) {
 }
 
 # Initial environment check
-Write-Host "ChromeOS Installer - Environment Check" -ForegroundColor Cyan
-Write-Host "========================================" -ForegroundColor Cyan
-Write-Host "Time: $(Get-Date)" -ForegroundColor Gray
-Write-Host "User: $env:USERNAME" -ForegroundColor Gray
-Write-Host "Directory: $PWD" -ForegroundColor Gray
-Write-Host "========================================" -ForegroundColor Cyan
+#Write-Host "ChromeOS Installer - Environment Check" -ForegroundColor Cyan
+#Write-Host "========================================" -ForegroundColor Cyan
+#Write-Host "Time: $(Get-Date)" -ForegroundColor Gray
+#Write-Host "User: $env:USERNAME" -ForegroundColor Gray
+#Write-Host "Directory: $PWD" -ForegroundColor Gray
+#Write-Host "========================================" -ForegroundColor Cyan
 
 # Set console encoding to UTF-8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -75,7 +75,7 @@ if ($missingTools.Count -gt 0) {
 
 Write-Host "Environment check passed!" -ForegroundColor Green
 Write-Host "Starting installation..." -ForegroundColor Cyan
-Write-Host ""
+#Write-Host ""
 
 <#
 .SYNOPSIS
