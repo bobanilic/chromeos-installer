@@ -1431,7 +1431,7 @@ function Start-ChromeOSInstallation {
             $choice = Read-Host "Select an option (1-5)"
             
             switch ($choice) {
-                '1' { 
+                '1' {
                     Write-InstallLog "Starting automatic installation process..." -Level 'Info'
                     try {
                         if (-not (Test-Prerequisites)) {
@@ -1441,13 +1441,13 @@ function Start-ChromeOSInstallation {
                         # Get processor and compatible build
                         $processor = Get-SystemProcessor
                         if (-not $processor.IsValid) {
-							throw "Failed to detect processor information"
-						}
-						if (-not $processor.Supported) 
-							throw "Unsupported processor: $($processor.Name)"
-						}
+                            throw "Failed to detect processor information"
+                        }
+                        if (-not $processor.Supported) {
+                            throw "Unsupported processor: $($processor.Name)"
+                        }
 
-						Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
+                        Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
                         Write-Host "Compatible with ChromeOS device: $($processor.Device)" -ForegroundColor Cyan
 
                         # Get available disks
@@ -1459,7 +1459,6 @@ function Start-ChromeOSInstallation {
                         # Get latest build
                         Write-Host "`nFetching latest ChromeOS build..." -ForegroundColor Cyan
                         $buildResult = Select-ChromeOSBuild -ForceLatest
-                        
                         if (-not $buildResult.IsValid) {
                             throw "Failed to get ChromeOS build"
                         }
@@ -1467,7 +1466,6 @@ function Start-ChromeOSInstallation {
                         # Download image
                         Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
                         $imagePath = Get-ChromeOSImage -Url $buildResult.DownloadUrl
-                        
                         if (-not $imagePath) {
                             throw "Failed to download ChromeOS image"
                         }
@@ -1482,7 +1480,8 @@ function Start-ChromeOSInstallation {
                         Show-Banner
                     }
                 }
-                '2' { 
+                
+                '2' {
                     Write-InstallLog "Starting custom installation process..." -Level 'Info'
                     try {
                         if (-not (Test-Prerequisites)) {
@@ -1491,6 +1490,13 @@ function Start-ChromeOSInstallation {
                         
                         # Get processor info
                         $processor = Get-SystemProcessor
+                        if (-not $processor.IsValid) {
+                            throw "Failed to detect processor information"
+                        }
+                        if (-not $processor.Supported) {
+                            throw "Unsupported processor: $($processor.Name)"
+                        }
+
                         Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
                         Write-Host "Compatible with ChromeOS device: $($processor.Device)" -ForegroundColor Cyan
 
@@ -1502,16 +1508,14 @@ function Start-ChromeOSInstallation {
 
                         # Interactive build selection
                         Write-Host "`nSelecting ChromeOS build..." -ForegroundColor Cyan
-                        $build = Select-ChromeOSBuild -Interactive
-                        
-                        if (-not $build) {
+                        $buildResult = Select-ChromeOSBuild -Interactive
+                        if (-not $buildResult.IsValid) {
                             throw "Failed to select ChromeOS build"
                         }
 
                         # Download image
                         Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
-                        $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
-                        
+                        $imagePath = Get-ChromeOSImage -Url $buildResult.DownloadUrl
                         if (-not $imagePath) {
                             throw "Failed to download ChromeOS image"
                         }
@@ -1526,6 +1530,7 @@ function Start-ChromeOSInstallation {
                         Show-Banner
                     }
                 }
+                
                 '3' {
                     Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
                     $requirements = Test-SystemRequirements
@@ -1539,20 +1544,27 @@ function Start-ChromeOSInstallation {
                     # Also show processor compatibility
                     Write-Host "`nChecking processor compatibility..." -ForegroundColor Cyan
                     $processor = Get-SystemProcessor
-                    Write-Host "Processor: $($processor.Name)" -ForegroundColor Yellow
-                    Write-Host "Compatible Device: $($processor.Device)" -ForegroundColor Yellow
-                    Write-Host "Supported: $(if ($processor.Supported) { 'Yes' } else { 'No' })" -ForegroundColor $(if ($processor.Supported) { 'Green' } else { 'Red' })
+                    if ($processor.IsValid) {
+                        Write-Host "Processor: $($processor.Name)" -ForegroundColor Yellow
+                        Write-Host "Compatible Device: $($processor.Device)" -ForegroundColor Yellow
+                        Write-Host "Supported: $(if ($processor.Supported) { 'Yes' } else { 'No' })" -ForegroundColor $(if ($processor.Supported) { 'Green' } else { 'Red' })
+                    }
+                    else {
+                        Write-Host "Failed to detect processor information" -ForegroundColor Red
+                    }
                     
                     Read-Host "`nPress Enter to continue"
                     Show-Banner
                 }
+                
                 '4' {
                     Write-Host "`nScanning for available disks..." -ForegroundColor Cyan
                     $diskInfo = Get-AvailableDisks
                     if ($diskInfo.IsValid -and $diskInfo.Disks.Count -gt 0) {
                         Write-Host "`nAvailable Disks:" -ForegroundColor Yellow
                         $diskInfo.Disks | Format-Table -AutoSize
-                    } else {
+                    }
+                    else {
                         Write-Host "`nNo suitable disks found!" -ForegroundColor Red
                         Write-Host "Requirements:" -ForegroundColor Yellow
                         Write-Host "- Minimum 16GB size" -ForegroundColor Gray
@@ -1561,10 +1573,12 @@ function Start-ChromeOSInstallation {
                     Read-Host "`nPress Enter to continue"
                     Show-Banner
                 }
-                '5' { 
+                
+                '5' {
                     Write-Host "Exiting..." -ForegroundColor Yellow
-                    exit 0 
+                    exit 0
                 }
+                
                 default {
                     Write-Host "`nInvalid option. Please select 1-5." -ForegroundColor Red
                     Start-Sleep -Seconds 2
