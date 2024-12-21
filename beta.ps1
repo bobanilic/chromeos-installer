@@ -290,6 +290,44 @@ function Show-Banner {
 }
 
 # System requirements validation
+function Test-Prerequisites {
+    Write-InstallLog "Checking prerequisites..." -Level 'Info'
+    
+    try {
+        # Check system requirements first
+        $requirements = Test-SystemRequirements
+        if (-not $requirements -or -not $requirements.IsValid) {
+            Write-Host "`nSystem requirements not met:" -ForegroundColor Red
+            foreach ($detail in $requirements.Details.GetEnumerator()) {
+                $status = if ($detail.Value.Pass) { "PASS" } else { "FAIL" }
+                $color = if ($detail.Value.Pass) { "Green" } else { "Red" }
+                Write-Host "$($detail.Key): [$status] - Required: $($detail.Value.Required), Current: $($detail.Value.Current)" -ForegroundColor $color
+            }
+            return $false
+        }
+
+        # Check processor compatibility
+        $processor = Get-SystemProcessor
+        if (-not $processor -or -not $processor.IsValid -or -not $processor.Supported) {
+            Write-Host "`nUnsupported processor: $($processor.Name)" -ForegroundColor Red
+            return $false
+        }
+
+        # Check available disks
+        $diskInfo = Get-AvailableDisks
+        if (-not $diskInfo -or -not $diskInfo.IsValid -or $diskInfo.Disks.Count -eq 0) {
+            Write-Host "`nNo suitable disks found for installation." -ForegroundColor Red
+            return $false
+        }
+
+        return $true
+    }
+    catch {
+        Write-InstallLog "Prerequisites check failed: $_" -Level 'Error'
+        return $false
+    }
+}
+
 function Test-SystemRequirements {
     Write-InstallLog "Checking system requirements..." -Level 'Info'
     
@@ -297,54 +335,50 @@ function Test-SystemRequirements {
         # Create result object with both IsValid and Details properties
         $result = @{
             IsValid = $false
-            Details = @{
-                AdminRights = @{
-                    Pass = $false
-                    Required = "Administrator"
-                    Current = ""
-                }
-                RAM = @{
-                    Pass = $false
-                    Required = "4GB"
-                    Current = ""
-                }
-                DiskSpace = @{
-                    Pass = $false
-                    Required = "16GB"
-                    Current = ""
-                }
-                Architecture = @{
-                    Pass = $false
-                    Required = "64-bit"
-                    Current = ""
-                }
-            }
+            Details = @{}
         }
 
         # Check Admin Rights
         $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
         $adminStatus = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-        $result.Details.AdminRights.Current = if ($adminStatus) { "Administrator" } else { "User" }
-        $result.Details.AdminRights.Pass = $adminStatus
-
+        
         # Check RAM
         $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
-        $result.Details.RAM.Current = "$([math]::Round($ram, 2))GB"
-        $result.Details.RAM.Pass = $ram -ge 4
-
+        
         # Check Disk Space
         $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
         $freeSpace = $disk.FreeSpace / 1GB
-        $result.Details.DiskSpace.Current = "$([math]::Round($freeSpace, 2))GB"
-        $result.Details.DiskSpace.Pass = $freeSpace -ge 16
-
+        
         # Check Architecture
         $arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
-        $result.Details.Architecture.Current = $arch
-        $result.Details.Architecture.Pass = $arch -eq "64-bit"
 
-        # Set overall IsValid based on all requirements passing
-        $result.IsValid = -not ($result.Details.Values | Where-Object { -not $_.Pass })
+        # Populate Details
+        $result.Details = @{
+            AdminRights = @{
+                Pass = $adminStatus
+                Required = "Administrator"
+                Current = if ($adminStatus) { "Administrator" } else { "User" }
+            }
+            RAM = @{
+                Pass = $ram -ge 4
+                Required = "4GB"
+                Current = "$([math]::Round($ram, 2))GB"
+            }
+            DiskSpace = @{
+                Pass = $freeSpace -ge 16
+                Required = "16GB"
+                Current = "$([math]::Round($freeSpace, 2))GB"
+            }
+            Architecture = @{
+                Pass = $arch -eq "64-bit"
+                Required = "64-bit"
+                Current = $arch
+            }
+        }
+
+        # Set overall IsValid status
+        $result.IsValid = $result.Details.Values | Where-Object { -not $_.Pass } | Select-Object -First 1 | ForEach-Object { $false } | Select-Object -First 1
+        if ($null -eq $result.IsValid) { $result.IsValid = $true }
 
         Write-InstallLog "System requirements check completed. IsValid: $($result.IsValid)" -Level 'Info'
         return $result
@@ -355,47 +389,6 @@ function Test-SystemRequirements {
             IsValid = $false
             Details = @{}
         }
-    }
-}
-
-function Test-Prerequisites {
-    Write-InstallLog "Checking prerequisites..." -Level 'Info'
-    
-    try {
-        # Check system requirements first
-        $requirements = Test-SystemRequirements
-        
-        if (-not $requirements.IsValid) {
-            Write-Host "`nSystem requirements not met:" -ForegroundColor Red
-            $requirements.Details.GetEnumerator() | ForEach-Object {
-                $status = if ($_.Value.Pass) { "PASS" } else { "FAIL" }
-                $color = if ($_.Value.Pass) { "Green" } else { "Red" }
-                Write-Host "$($_.Key): [$status] - Required: $($_.Value.Required), Current: $($_.Value.Current)" -ForegroundColor $color
-            }
-            return $false
-        }
-
-        # Check processor compatibility
-        Write-InstallLog "Detecting system processor..." -Level 'Info'
-        $processor = Get-SystemProcessor
-        if (-not $processor.Supported) {
-            Write-Host "`nUnsupported processor: $($processor.Name)" -ForegroundColor Red
-            return $false
-        }
-
-        # Check available disks
-        Write-InstallLog "Scanning for available disks..." -Level 'Info'
-        $disks = Get-AvailableDisks
-        if (-not $disks) {
-            Write-Host "`nNo suitable disks found for installation." -ForegroundColor Red
-            return $false
-        }
-
-        return $true
-    }
-    catch {
-        Write-InstallLog "Prerequisites check failed: $_" -Level 'Error'
-        return $false
     }
 }
 # Error handling wrapper
@@ -1520,6 +1513,12 @@ function Select-ChromeOSBuild {
 }
 function Start-ChromeOSInstallation {
     try {
+        $currentDateUtc = (Get-Date).ToUniversalTime()
+        $currentUser = $env:USERNAME
+
+        Write-Host "Current Date and Time (UTC): $($currentDateUtc.ToString('yyyy-MM-dd HH:mm:ss'))" -ForegroundColor Cyan
+        Write-Host "Current User's Login: $currentUser`n" -ForegroundColor Cyan
+        
         Write-Host "Environment check passed!" -ForegroundColor Green
         Write-Host "Starting installation...`n" -ForegroundColor Cyan
         
@@ -1579,7 +1578,7 @@ function Start-ChromeOSInstallation {
                     }
                     catch {
                         Write-InstallLog "Automatic installation failed: $_" -Level 'Error'
-                        throw
+                        Write-Host "`nInstallation failed: $_" -ForegroundColor Red
                     }
                     finally {
                         Read-Host "`nPress Enter to continue"
@@ -1630,7 +1629,7 @@ function Start-ChromeOSInstallation {
                     }
                     catch {
                         Write-InstallLog "Custom installation failed: $_" -Level 'Error'
-                        throw
+                        Write-Host "`nInstallation failed: $_" -ForegroundColor Red
                     }
                     finally {
                         Read-Host "`nPress Enter to continue"
@@ -1641,21 +1640,23 @@ function Start-ChromeOSInstallation {
                 '3' {
                     try {
                         Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
-                        $requirements = Test-SystemRequirements
-                        Write-Host "`nSystem Requirements Check Results:" -ForegroundColor Yellow
+                        $requirements = Test-SystemRequirements()
                         
-                        if ($null -ne $requirements.Details -and $requirements.Details.Count -gt 0) {
+                        if ($requirements -and $requirements.Details) {
+                            Write-Host "`nSystem Requirements Check Results:" -ForegroundColor Yellow
                             foreach ($item in $requirements.Details.GetEnumerator()) {
                                 $status = if ($item.Value.Pass) { "PASS" } else { "FAIL" }
                                 $color = if ($item.Value.Pass) { "Green" } else { "Red" }
                                 Write-Host "$($item.Key): [$status] - Required: $($item.Value.Required), Current: $($item.Value.Current)" -ForegroundColor $color
                             }
+                            
+                            Write-Host "`nOverall Status: $(if ($requirements.IsValid) { "PASS" } else { "FAIL" })" -ForegroundColor $(if ($requirements.IsValid) { "Green" } else { "Red" })
                         } 
                         else {
                             Write-Host "Failed to get system requirements details" -ForegroundColor Red
                         }
                         
-                        # Also show processor compatibility
+                        # Show processor compatibility
                         Write-Host "`nChecking processor compatibility..." -ForegroundColor Cyan
                         $processor = Get-SystemProcessor
                         if ($processor.IsValid) {
@@ -1716,7 +1717,8 @@ function Start-ChromeOSInstallation {
         } while ($true)
     }
     catch {
-        Write-InstallLog "Installation failed: $_" -Level 'Error'
+        $errorTime = (Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')
+        Write-InstallLog "Installation failed at $errorTime UTC: $_" -Level 'Error'
         Write-Host "`nInstallation failed. Check the log file for details:" -ForegroundColor Red
         Write-Host $script:metadata.LogFile -ForegroundColor Yellow
         exit 1
