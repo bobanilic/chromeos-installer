@@ -964,44 +964,39 @@ function Get-AvailableDisks {
     try {
         Write-InstallLog "Scanning for available disks..." -Level 'Info'
         
-        $disks = Get-Disk | Where-Object {
-            # Filter criteria
-            $_.Size -gt $Global:CONFIG.MinimumDiskSize -and  # Minimum size check
-            -not $_.IsBoot -and                              # Not the boot disk
-            -not $_.IsSystem -and                            # Not the system disk
-            $_.PartitionStyle -ne "RAW" -and                 # Initialized disk
-            $_.OperationalStatus -eq "Online"                # Disk is online
-        } | Select-Object @{
-            Name = 'Number'
-            Expression = {$_.Number}
-        }, @{
-            Name = 'FriendlyName'
-            Expression = {$_.FriendlyName}
-        }, @{
-            Name = 'Size'
-            Expression = {[math]::Round($_.Size / 1GB, 2).ToString() + " GB"}
-        }, @{
-            Name = 'BusType'
-            Expression = {$_.BusType}
-        }, @{
-            Name = 'PartitionStyle'
-            Expression = {$_.PartitionStyle}
-        }, @{
-            Name = 'HealthStatus'
-            Expression = {$_.HealthStatus}
+        # Create a custom object to store disk information and validity
+        $diskInfo = New-Object PSObject -Property @{
+            IsValid = $false
+            Disks = @()
         }
 
-        if (-not $disks) {
-            Write-InstallLog "No suitable disks found" -Level 'Warning'
-            return $null
+        # Get all physical disks
+        $physicalDisks = Get-Disk | Where-Object {
+            $_.Size -ge 16GB -and  # Minimum size requirement
+            -not $_.IsBoot -and    # Not the boot disk
+            -not $_.IsSystem       # Not the system disk
         }
 
-        Write-InstallLog "Found $($disks.Count) suitable disk(s)" -Level 'Debug'
-        return $disks
+        if ($physicalDisks) {
+            $diskInfo.Disks = $physicalDisks | Select-Object @(
+                'Number',
+                'FriendlyName',
+                @{Name='Size(GB)'; Expression={[math]::Round($_.Size / 1GB, 2)}},
+                'PartitionStyle',
+                'OperationalStatus'
+            )
+            $diskInfo.IsValid = $true
+        }
+
+        Write-InstallLog "Found $($diskInfo.Disks.Count) suitable disks" -Level 'Info'
+        return $diskInfo
     }
     catch {
-        Write-InstallLog "Failed to get available disks: $_" -Level 'Error'
-        throw
+        Write-InstallLog "Error scanning for available disks: $_" -Level 'Error'
+        return New-Object PSObject -Property @{
+            IsValid = $false
+            Disks = @()
+        }
     }
 }
 
@@ -1118,20 +1113,31 @@ function Test-Prerequisites {
     try {
         # Check system requirements first
         $requirements = Test-SystemRequirements
+        
         if (-not $requirements.IsValid) {
-            throw "System requirements not met. Please check the requirements and try again."
+            Write-Host "`nSystem requirements not met:" -ForegroundColor Red
+            $requirements.Details.GetEnumerator() | ForEach-Object {
+                $status = if ($_.Value.Pass) { "PASS" } else { "FAIL" }
+                $color = if ($_.Value.Pass) { "Green" } else { "Red" }
+                Write-Host "$($_.Key): [$status] - Required: $($_.Value.Required), Current: $($_.Value.Current)" -ForegroundColor $color
+            }
+            return $false
         }
 
         # Check processor compatibility
+        Write-InstallLog "Detecting system processor..." -Level 'Info'
         $processor = Get-SystemProcessor
         if (-not $processor.Supported) {
-            throw "Unsupported processor: $($processor.Name)"
+            Write-Host "`nUnsupported processor: $($processor.Name)" -ForegroundColor Red
+            return $false
         }
 
         # Check available disks
-        $disks = Get-AvailableDisks
-        if (-not $disks) {
-            throw "No suitable disks found for installation."
+        Write-InstallLog "Scanning for available disks..." -Level 'Info'
+        $diskInfo = Get-AvailableDisks
+        if (-not $diskInfo.IsValid -or $diskInfo.Disks.Count -eq 0) {
+            Write-Host "`nNo suitable disks found for installation." -ForegroundColor Red
+            return $false
         }
 
         return $true
@@ -1519,10 +1525,17 @@ function Start-ChromeOSInstallation {
                         if (-not (Test-Prerequisites)) {
                             throw "Prerequisites check failed"
                         }
+                        
                         # Get processor and compatible build
                         $processor = Get-SystemProcessor
                         Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
                         Write-Host "Compatible with ChromeOS device: $($processor.Device)" -ForegroundColor Cyan
+
+                        # Get available disks
+                        $diskInfo = Get-AvailableDisks
+                        if (-not $diskInfo.IsValid -or $diskInfo.Disks.Count -eq 0) {
+                            throw "No suitable disks found for installation"
+                        }
 
                         # Get latest build
                         Write-Host "`nFetching latest ChromeOS build..." -ForegroundColor Cyan
@@ -1556,9 +1569,34 @@ function Start-ChromeOSInstallation {
                         if (-not (Test-Prerequisites)) {
                             throw "Prerequisites check failed"
                         }
-                        Write-Host "`nStarting custom installation..." -ForegroundColor Cyan
+                        
+                        # Get processor info
+                        $processor = Get-SystemProcessor
+                        Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
+                        Write-Host "Compatible with ChromeOS device: $($processor.Device)" -ForegroundColor Cyan
+
+                        # Get available disks
+                        $diskInfo = Get-AvailableDisks
+                        if (-not $diskInfo.IsValid -or $diskInfo.Disks.Count -eq 0) {
+                            throw "No suitable disks found for installation"
+                        }
+
+                        # Interactive build selection
+                        Write-Host "`nSelecting ChromeOS build..." -ForegroundColor Cyan
                         $build = Select-ChromeOSBuild -Interactive
+                        
+                        if (-not $build) {
+                            throw "Failed to select ChromeOS build"
+                        }
+
+                        # Download image
+                        Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
                         $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+                        
+                        if (-not $imagePath) {
+                            throw "Failed to download ChromeOS image"
+                        }
+
                         Write-Host "Custom installation complete!" -ForegroundColor Green
                         Read-Host "`nPress Enter to continue"
                         Show-Banner
@@ -1578,17 +1616,28 @@ function Start-ChromeOSInstallation {
                         $color = if ($_.Value.Pass) { "Green" } else { "Red" }
                         Write-Host "$($_.Key): [$status] - Required: $($_.Value.Required), Current: $($_.Value.Current)" -ForegroundColor $color
                     }
+                    
+                    # Also show processor compatibility
+                    Write-Host "`nChecking processor compatibility..." -ForegroundColor Cyan
+                    $processor = Get-SystemProcessor
+                    Write-Host "Processor: $($processor.Name)" -ForegroundColor Yellow
+                    Write-Host "Compatible Device: $($processor.Device)" -ForegroundColor Yellow
+                    Write-Host "Supported: $(if ($processor.Supported) { 'Yes' } else { 'No' })" -ForegroundColor $(if ($processor.Supported) { 'Green' } else { 'Red' })
+                    
                     Read-Host "`nPress Enter to continue"
                     Show-Banner
                 }
                 '4' {
                     Write-Host "`nScanning for available disks..." -ForegroundColor Cyan
-                    $disks = Get-AvailableDisks
-                    if ($disks) {
+                    $diskInfo = Get-AvailableDisks
+                    if ($diskInfo.IsValid -and $diskInfo.Disks.Count -gt 0) {
                         Write-Host "`nAvailable Disks:" -ForegroundColor Yellow
-                        $disks | Format-Table -AutoSize
+                        $diskInfo.Disks | Format-Table -AutoSize
                     } else {
-                        Write-Host "No suitable disks found!" -ForegroundColor Red
+                        Write-Host "`nNo suitable disks found!" -ForegroundColor Red
+                        Write-Host "Requirements:" -ForegroundColor Yellow
+                        Write-Host "- Minimum 16GB size" -ForegroundColor Gray
+                        Write-Host "- Not boot/system disk" -ForegroundColor Gray
                     }
                     Read-Host "`nPress Enter to continue"
                     Show-Banner
