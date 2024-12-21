@@ -1485,6 +1485,7 @@ function Start-ChromeOSInstallation {
             throw "Failed to initialize working environment"
         }
 
+        # Show banner once at the start
         Show-Banner
         
         # Main menu loop
@@ -1495,11 +1496,9 @@ function Start-ChromeOSInstallation {
                 '1' { 
                     Write-InstallLog "Starting automatic installation process..." -Level 'Info'
                     try {
-                        # Check prerequisites
                         if (-not (Test-Prerequisites)) {
                             throw "Prerequisites check failed"
                         }
-
                         # Get processor and compatible build
                         $processor = Get-SystemProcessor
                         Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
@@ -1522,7 +1521,56 @@ function Start-ChromeOSInstallation {
                         Show-Banner
                     }
                 }
-                # ... rest of your switch cases ...
+                '2' { 
+                    Write-InstallLog "Starting custom installation process..." -Level 'Info'
+                    try {
+                        if (-not (Test-Prerequisites)) {
+                            throw "Prerequisites check failed"
+                        }
+                        Write-Host "`nStarting custom installation..." -ForegroundColor Cyan
+                        $build = Select-ChromeOSBuild -Interactive
+                        $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+                        Write-Host "Custom installation complete!" -ForegroundColor Green
+                        Show-Banner
+                    }
+                    catch {
+                        Write-InstallLog "Custom installation failed: $_" -Level 'Error'
+                        Read-Host "`nPress Enter to continue"
+                        Show-Banner
+                    }
+                }
+                '3' {
+                    Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
+                    $requirements = Test-SystemRequirements
+                    Write-Host "`nSystem Requirements Check Results:" -ForegroundColor Yellow
+                    $requirements.Details.GetEnumerator() | ForEach-Object {
+                        $status = if ($_.Value.Pass) { "PASS" } else { "FAIL" }
+                        $color = if ($_.Value.Pass) { "Green" } else { "Red" }
+                        Write-Host "$($_.Key): [$status] - Required: $($_.Value.Required), Current: $($_.Value.Current)" -ForegroundColor $color
+                    }
+                    Read-Host "`nPress Enter to continue"
+                    Show-Banner
+                }
+                '4' {
+                    Write-Host "`nScanning for available disks..." -ForegroundColor Cyan
+                    $disks = Get-AvailableDisks
+                    if ($disks) {
+                        Write-Host "`nAvailable Disks:" -ForegroundColor Yellow
+                        $disks | Format-Table -AutoSize
+                    } else {
+                        Write-Host "No suitable disks found!" -ForegroundColor Red
+                    }
+                    Read-Host "`nPress Enter to continue"
+                    Show-Banner
+                }
+                '5' { 
+                    Write-Host "Exiting..." -ForegroundColor Yellow
+                    exit 0 
+                }
+                default {
+                    Write-Host "`nInvalid option. Please select 1-5." -ForegroundColor Red
+                    Show-Banner
+                }
             }
         } while ($true)
     }
@@ -1533,3 +1581,6 @@ function Start-ChromeOSInstallation {
         exit 1
     }
 }
+
+# Start the installation
+Start-ChromeOSInstallation
