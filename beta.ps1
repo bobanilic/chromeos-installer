@@ -325,22 +325,55 @@ function Test-SystemRequirements {
     Write-InstallLog "Checking system requirements..." -Level 'Info'
     
     try {
+        # Get system information
         $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
         $ram = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 2)
         $freeSpace = [math]::Round((Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'").FreeSpace / 1GB, 2)
         $arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
-        
-        return @{
-            IsValid = ($isAdmin -and ($ram -ge 4) -and ($freeSpace -ge 16) -and ($arch -eq "64-bit"))
-            AdminRights = $isAdmin
-            RAM = $ram
-            DiskSpace = $freeSpace
-            Architecture = $arch
+
+        # Create result object
+        $result = @{
+            IsValid = $true
+            Requirements = @{
+                AdminRights = @{
+                    Pass = $isAdmin
+                    Required = "Administrator"
+                    Current = if ($isAdmin) { "Administrator" } else { "User" }
+                }
+                RAM = @{
+                    Pass = $ram -ge 4
+                    Required = "4GB"
+                    Current = "$ram GB"
+                }
+                DiskSpace = @{
+                    Pass = $freeSpace -ge 16
+                    Required = "16GB"
+                    Current = "$freeSpace GB"
+                }
+                Architecture = @{
+                    Pass = $arch -eq "64-bit"
+                    Required = "64-bit"
+                    Current = $arch
+                }
+            }
         }
+
+        # Set overall validity
+        $result.IsValid = $result.Requirements.AdminRights.Pass -and 
+                         $result.Requirements.RAM.Pass -and 
+                         $result.Requirements.DiskSpace.Pass -and 
+                         $result.Requirements.Architecture.Pass
+
+        Write-InstallLog "System requirements check completed. IsValid: $($result.IsValid)" -Level 'Info'
+        return $result
+
     }
     catch {
         Write-InstallLog "Error checking system requirements: $_" -Level 'Error'
-        return @{ IsValid = $false }
+        return @{
+            IsValid = $false
+            Requirements = @{}
+        }
     }
 }
 # Error handling wrapper
@@ -1595,14 +1628,24 @@ function Start-ChromeOSInstallation {
                         $requirements = Test-SystemRequirements
                         
                         Write-Host "`nSystem Requirements Check:" -ForegroundColor Yellow
-                        Write-Host "Admin Rights: $(if ($requirements.AdminRights) { '[PASS]' } else { '[FAIL]' })" -ForegroundColor $(if ($requirements.AdminRights) { 'Green' } else { 'Red' })
-                        Write-Host "RAM: $(if ($requirements.RAM -ge 4) { '[PASS]' } else { '[FAIL]' }) ($($requirements.RAM) GB)" -ForegroundColor $(if ($requirements.RAM -ge 4) { 'Green' } else { 'Red' })
-                        Write-Host "Free Space: $(if ($requirements.DiskSpace -ge 16) { '[PASS]' } else { '[FAIL]' }) ($($requirements.DiskSpace) GB)" -ForegroundColor $(if ($requirements.DiskSpace -ge 16) { 'Green' } else { 'Red' })
-                        Write-Host "Architecture: $(if ($requirements.Architecture -eq '64-bit') { '[PASS]' } else { '[FAIL]' }) ($($requirements.Architecture))" -ForegroundColor $(if ($requirements.Architecture -eq '64-bit') { 'Green' } else { 'Red' })
                         
-                        Write-Host "`nOverall Status: $(if ($requirements.IsValid) { '[PASS]' } else { '[FAIL]' })" -ForegroundColor $(if ($requirements.IsValid) { 'Green' } else { 'Red' })
+                        foreach ($req in $requirements.Requirements.GetEnumerator()) {
+                            Write-Host "$($req.Key): $(if ($req.Value.Pass) { "[PASS]" } else { "[FAIL]" }) - Required: $($req.Value.Required), Current: $($req.Value.Current)" -ForegroundColor $(if ($req.Value.Pass) { "Green" } else { "Red" })
+                        }
                         
-                        # Rest of your existing processor and disk checks...
+                        Write-Host "`nOverall Status: $(if ($requirements.IsValid) { "[PASS]" } else { "[FAIL]" })" -ForegroundColor $(if ($requirements.IsValid) { "Green" } else { "Red" })
+                        
+                        # Show processor compatibility
+                        Write-Host "`nChecking processor compatibility..." -ForegroundColor Cyan
+                        $processor = Get-SystemProcessor
+                        if ($processor.IsValid) {
+                            Write-Host "Processor: $($processor.Name)" -ForegroundColor Yellow
+                            Write-Host "Compatible Device: $($processor.Device)" -ForegroundColor Yellow
+                            Write-Host "Supported: $(if ($processor.Supported) { 'Yes' } else { 'No' })" -ForegroundColor $(if ($processor.Supported) { "Green" } else { "Red" })
+                        }
+                        else {
+                            Write-Host "Failed to detect processor information" -ForegroundColor Red
+                        }
                     }
                     catch {
                         Write-InstallLog "System requirements check failed: $_" -Level 'Error'
