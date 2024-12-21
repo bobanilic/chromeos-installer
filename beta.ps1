@@ -1524,19 +1524,21 @@ function Start-ChromeOSInstallation {
                         # Get latest build
                         Write-Host "`nFetching latest ChromeOS build..." -ForegroundColor Cyan
                         $build = Select-ChromeOSBuild -ForceLatest
-						
-						if (-not $build) {
-							throw "Failed to get ChromeOS build"
+                        
+                        if (-not $build) {
+                            throw "Failed to get ChromeOS build"
+                        }
 
                         # Download image
                         Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
                         $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
-						
-						if (-not $imagePath) {
-							throw "Failed to download ChromeOS image"
+                        
+                        if (-not $imagePath) {
+                            throw "Failed to download ChromeOS image"
+                        }
 
                         Write-Host "Auto installation complete!" -ForegroundColor Green
-						Read-Host "`nPress Enter to continue"
+                        Read-Host "`nPress Enter to continue"
                         Show-Banner
                     }
                     catch {
@@ -1555,6 +1557,7 @@ function Start-ChromeOSInstallation {
                         $build = Select-ChromeOSBuild -Interactive
                         $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
                         Write-Host "Custom installation complete!" -ForegroundColor Green
+                        Read-Host "`nPress Enter to continue"
                         Show-Banner
                     }
                     catch {
@@ -1593,6 +1596,7 @@ function Start-ChromeOSInstallation {
                 }
                 default {
                     Write-Host "`nInvalid option. Please select 1-5." -ForegroundColor Red
+                    Start-Sleep -Seconds 2
                     Show-Banner
                 }
             }
