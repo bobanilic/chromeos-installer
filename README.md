@@ -38,7 +38,3 @@ C:\
 ├── ChromeOS_Installer\     # Create this directory
 │   ├── install.ps1         # The main script
 │   └── config\             # Created automatically by script
-
-
-
-
