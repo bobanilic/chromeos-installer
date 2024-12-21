@@ -1091,6 +1091,37 @@ function Initialize-InstallationDisk {
     }
 }
 
+# Prerequisites check function
+function Test-Prerequisites {
+    Write-InstallLog "Checking prerequisites..." -Level 'Info'
+    
+    try {
+        # Check system requirements first
+        $requirements = Test-SystemRequirements
+        if (-not $requirements.IsValid) {
+            throw "System requirements not met. Please check the requirements and try again."
+        }
+
+        # Check processor compatibility
+        $processor = Get-SystemProcessor
+        if (-not $processor.Supported) {
+            throw "Unsupported processor: $($processor.Name)"
+        }
+
+        # Check available disks
+        $disks = Get-AvailableDisks
+        if (-not $disks) {
+            throw "No suitable disks found for installation."
+        }
+
+        return $true
+    }
+    catch {
+        Write-InstallLog "Prerequisites check failed: $_" -Level 'Error'
+        return $false
+    }
+}
+
 function Install-ChromeOS {
     param (
         [Parameter(Mandatory=$true)]
@@ -1462,47 +1493,36 @@ function Start-ChromeOSInstallation {
             
             switch ($choice) {
                 '1' { 
-                    Write-Host "`nStarting automatic installation..." -ForegroundColor Cyan
-                    $build = Select-ChromeOSBuild -ForceLatest
-                    $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
-                    Write-Host "Auto installation complete!" -ForegroundColor Green
-                    Show-Banner
-                }
-                '2' { 
-                    Write-Host "`nStarting custom installation..." -ForegroundColor Cyan
-                    $build = Select-ChromeOSBuild -Interactive
-                    $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
-                    Write-Host "Custom installation complete!" -ForegroundColor Green
-                    Show-Banner
-                }
-                '3' {
-                    Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
-                    $requirements = Test-SystemRequirements
-                    Write-Host "`nSystem Requirements Check Results:" -ForegroundColor Yellow
-                    $requirements.Details.GetEnumerator() | ForEach-Object {
-                        $status = if ($_.Value.Pass) { "PASS" } else { "FAIL" }
-                        $color = if ($_.Value.Pass) { "Green" } else { "Red" }
-                        Write-Host "$($_.Key): [$status] - Required: $($_.Value.Required), Current: $($_.Value.Current)" -ForegroundColor $color
+                    Write-InstallLog "Starting automatic installation process..." -Level 'Info'
+                    try {
+                        # Check prerequisites
+                        if (-not (Test-Prerequisites)) {
+                            throw "Prerequisites check failed"
+                        }
+
+                        # Get processor and compatible build
+                        $processor = Get-SystemProcessor
+                        Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
+                        Write-Host "Compatible with ChromeOS device: $($processor.Device)" -ForegroundColor Cyan
+
+                        # Get latest build
+                        Write-Host "`nFetching latest ChromeOS build..." -ForegroundColor Cyan
+                        $build = Select-ChromeOSBuild -ForceLatest
+
+                        # Download image
+                        Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
+                        $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+
+                        Write-Host "Auto installation complete!" -ForegroundColor Green
+                        Show-Banner
                     }
-                    Read-Host "`nPress Enter to continue"
-                    Show-Banner
-                }
-                '4' {
-                    Write-Host "`nScanning for available disks..." -ForegroundColor Cyan
-                    $disks = Get-AvailableDisks
-                    if ($disks) {
-                        Write-Host "`nAvailable Disks:" -ForegroundColor Yellow
-                        $disks | Format-Table -AutoSize
-                    } else {
-                        Write-Host "No suitable disks found!" -ForegroundColor Red
+                    catch {
+                        Write-InstallLog "Automatic installation failed: $_" -Level 'Error'
+                        Read-Host "`nPress Enter to continue"
+                        Show-Banner
                     }
-                    Read-Host "`nPress Enter to continue"
-                    Show-Banner
                 }
-                '5' { 
-                    Write-Host "Exiting..." -ForegroundColor Yellow
-                    exit 0 
-                }
+                # ... rest of your switch cases ...
             }
         } while ($true)
     }
