@@ -1446,14 +1446,17 @@ function Show-InstallationMenu {
 # Main execution block
 function Start-ChromeOSInstallation {
     try {
-        Show-Banner
+        Write-Host "Environment check passed!" -ForegroundColor Green
+        Write-Host "Starting installation...`n" -ForegroundColor Cyan
         
         # Initialize working environment
         if (-not (Initialize-WorkingEnvironment)) {
             throw "Failed to initialize working environment"
         }
 
-        # Get user choice
+        Show-Banner
+        
+        # Main menu loop
         do {
             $choice = Read-Host "Select an option (1-5)"
             
@@ -1463,12 +1466,14 @@ function Start-ChromeOSInstallation {
                     $build = Select-ChromeOSBuild -ForceLatest
                     $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
                     Write-Host "Auto installation complete!" -ForegroundColor Green
+                    Show-Banner
                 }
                 '2' { 
                     Write-Host "`nStarting custom installation..." -ForegroundColor Cyan
                     $build = Select-ChromeOSBuild -Interactive
                     $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
                     Write-Host "Custom installation complete!" -ForegroundColor Green
+                    Show-Banner
                 }
                 '3' {
                     Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
@@ -1508,6 +1513,3 @@ function Start-ChromeOSInstallation {
         exit 1
     }
 }
-
-# Start the installation
-Start-ChromeOSInstallation
