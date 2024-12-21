@@ -4,7 +4,7 @@ This repository contains a PowerShell script designed to automate the installati
 
 ## Features:
 - Automates the installation of Chrome OS components.
-- Bundled MinGW environment with required binaries.
+- Bundled Cygwin environment with required binaries.
 - Configures the environment for Chrome OS development.
 - Simple, easy-to-use PowerShell script for Windows users.
 
