@@ -270,7 +270,9 @@ function Write-InstallLog {
 
 # Script banner display
 function Show-Banner {
-    Write-Host "`nCurrent Date and Time (UTC): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
+    Clear-Host  # Clear the screen first
+    Write-Host ""
+    Write-Host "Current Date and Time (UTC): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
     Write-Host "Current User's Login: $($script:metadata.UserName)" -ForegroundColor Gray
     Write-Host ""
     $banner = @"
@@ -287,95 +289,69 @@ function Show-Banner {
     Write-Host $banner -ForegroundColor Cyan
 }
 
-function Show-InstallationMenu {
-    $menu = @"
-+====================================================+
-|              ChromeOS Installation Options           |
-+====================================================+
-| 1. Automatic Installation (Recommended)              |
-| 2. Custom Installation                              |
-| 3. Verify System Requirements                       |
-| 4. Show Available Disks                             |
-| 5. Exit                                             |
-+====================================================+
-"@
-    Write-Host $menu -ForegroundColor Cyan
-    
-    do {
-        $choice = Read-Host "Select an option (1-5)"
-    } while ($choice -notin '1','2','3','4','5')
-    
-    return $choice
-}
-
 # System requirements validation
 function Test-SystemRequirements {
     Write-InstallLog "Checking system requirements..." -Level 'Info'
     
     $requirements = @{
         IsValid = $true
-        Details = @{}
-    }
-
-    # Check PowerShell version
-    $requirements.Details.PowerShell = @{
-        Required = "5.1"
-        Current = $PSVersionTable.PSVersion.ToString()
-        Pass = $PSVersionTable.PSVersion.Major -ge 5
-    }
-
-    # Check Administrator privileges
-    $requirements.Details.AdminRights = @{
-        Required = $true
-        Current = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-        Pass = $requirements.Details.AdminRights.Current
-    }
-
-    # Check available memory
-    $memory = Get-WmiObject -Class Win32_ComputerSystem
-    $memoryGB = [math]::Round($memory.TotalPhysicalMemory / 1GB, 2)
-    $requirements.Details.Memory = @{
-        Required = "$($Global:CONFIG.MinimumMemory / 1GB) GB"
-        Current = "$memoryGB GB"
-        Pass = $memoryGB -ge ($Global:CONFIG.MinimumMemory / 1GB)
-    }
-
-    # Check Cygwin installation
-    $requirements.Details.Cygwin = @{
-        Required = $true
-        Current = Test-Path $Global:CONFIG.Paths.Cygwin
-        Pass = $requirements.Details.Cygwin.Current
-    }
-
-    # Check required Cygwin packages
-    $requirements.Details.CygwinPackages = @{
-        Required = $Global:CONFIG.RequiredPackages.Keys -join ", "
-        Missing = @()
-        Pass = $true
-    }
-
-    foreach ($package in $Global:CONFIG.RequiredPackages.GetEnumerator()) {
-        $execPath = Join-Path $Global:CONFIG.Paths.Cygwin "bin\$($package.Value)"
-        if (-not (Test-Path $execPath)) {
-            $requirements.Details.CygwinPackages.Missing += $package.Key
-            $requirements.Details.CygwinPackages.Pass = $false
+        Details = @{
+            AdminRights = @{
+                Pass = $false
+                Required = "Administrator"
+                Current = ""
+            }
+            RAM = @{
+                Pass = $false
+                Required = "4GB"
+                Current = ""
+            }
+            DiskSpace = @{
+                Pass = $false
+                Required = "16GB"
+                Current = ""
+            }
+            Architecture = @{
+                Pass = $false
+                Required = "64-bit"
+                Current = ""
+            }
         }
     }
 
-    # Update overall validity
-    $requirements.IsValid = $requirements.Details.Values.Pass -notcontains $false
+    try {
+        # Check Admin Rights
+        $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+        $requirements.Details.AdminRights.Current = if ($currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { "Administrator" } else { "User" }
+        $requirements.Details.AdminRights.Pass = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-    # Log results
-    foreach ($check in $requirements.Details.GetEnumerator()) {
-        $status = if ($check.Value.Pass) { "PASS" } else { "FAIL" }
-        $message = "$($check.Key): [$status] - Required: $($check.Value.Required), Current: $($check.Value.Current)"
-        $level = if ($check.Value.Pass) { "Debug" } else { "Error" }
-        Write-InstallLog $message -Level $level
+        # Check RAM
+        $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
+        $requirements.Details.RAM.Current = "$([math]::Round($ram, 2))GB"
+        $requirements.Details.RAM.Pass = $ram -ge 4
+
+        # Check Disk Space
+        $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
+        $freeSpace = $disk.FreeSpace / 1GB
+        $requirements.Details.DiskSpace.Current = "$([math]::Round($freeSpace, 2))GB"
+        $requirements.Details.DiskSpace.Pass = $freeSpace -ge 16
+
+        # Check Architecture
+        $arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
+        $requirements.Details.Architecture.Current = $arch
+        $requirements.Details.Architecture.Pass = $arch -eq "64-bit"
+
+        # Update overall validity
+        $requirements.IsValid = $requirements.Details.Values | ForEach-Object { $_.Pass } | Where-Object { $_ -eq $false } | Measure-Object | ForEach-Object { $_.Count -eq 0 }
+
+        return $requirements
     }
-
-    return $requirements
+    catch {
+        Write-InstallLog "Error checking system requirements: $_" -Level 'Error'
+        $requirements.IsValid = $false
+        return $requirements
+    }
 }
-
 # Error handling wrapper
 function Invoke-WithErrorHandling {
     [CmdletBinding()]
