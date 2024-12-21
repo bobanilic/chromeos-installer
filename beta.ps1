@@ -19,13 +19,12 @@ foreach ($path in $Global:CONFIG.Paths.Values) {
 }
 
 # Initial environment check
-Write-Host "+====================================================+" -ForegroundColor Cyan
-Write-Host "|             ChromeOS Installer - Environment Check   |" -ForegroundColor Cyan
-Write-Host "+====================================================+" -ForegroundColor Cyan
-Write-Host "| Time: $(Get-Date)".PadRight(52) + "|" -ForegroundColor Gray
-Write-Host "| User: $env:USERNAME".PadRight(52) + "|" -ForegroundColor Gray
-Write-Host "| Directory: $PWD".PadRight(52) + "|" -ForegroundColor Gray
-Write-Host "+====================================================+" -ForegroundColor Cyan
+Write-Host "ChromeOS Installer - Environment Check" -ForegroundColor Cyan
+Write-Host "========================================" -ForegroundColor Cyan
+Write-Host "Time: $(Get-Date)" -ForegroundColor Gray
+Write-Host "User: $env:USERNAME" -ForegroundColor Gray
+Write-Host "Directory: $PWD" -ForegroundColor Gray
+Write-Host "========================================" -ForegroundColor Cyan
 
 # Set console encoding to UTF-8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
@@ -271,13 +270,12 @@ function Write-InstallLog {
 
 # Script banner display
 function Show-Banner {
-    Write-Host ""
-    Write-Host "Current Date and Time (UTC): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
+    Write-Host "`nCurrent Date and Time (UTC): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
     Write-Host "Current User's Login: $($script:metadata.UserName)" -ForegroundColor Gray
     Write-Host ""
     $banner = @"
 +====================================================+
-|              ChromeOS Installer v$($Global:SCRIPT_VERSION)               |
+|              ChromeOS Installation Menu              |
 +====================================================+
 | 1. Automatic Installation (Recommended)              |
 | 2. Custom Installation                              |
@@ -287,7 +285,6 @@ function Show-Banner {
 +====================================================+
 "@
     Write-Host $banner -ForegroundColor Cyan
-    Write-InstallLog "Script started - $($script:metadata | ConvertTo-Json)" -Level 'Debug'
 }
 
 function Show-InstallationMenu {
