@@ -458,72 +458,50 @@ function Remove-InstallationArtifacts {
 }
 # Processor detection and compatibility check
 function Get-SystemProcessor {
-    Write-InstallLog "Detecting system processor..." -Level 'Info'
-    
     try {
-        $cpu = Get-WmiObject Win32_Processor | Select-Object -First 1
-        $processorName = $cpu.Name
+        Write-InstallLog "Detecting system processor..." -Level 'Info'
         
-        $processorInfo = @{
-            Name = $processorName
-            Manufacturer = $cpu.Manufacturer
-            MaxClockSpeed = $cpu.MaxClockSpeed
-            NumberOfCores = $cpu.NumberOfCores
-            Architecture = $cpu.AddressWidth
-            Virtualization = $cpu.VirtualizationFirmwareEnabled
-        }
-        
-        Write-InstallLog "Processor details: $($processorInfo | ConvertTo-Json)" -Level 'Debug'
-        
-        $isAMD = $processorName -match "AMD"
-        
-        if ($isAMD) {
-            Write-InstallLog "AMD processor detected - using gumboz device" -Level 'Info'
-            return @{
-                Type = "AMD"
-                Device = "gumboz"
-                Name = $processorName
-                Description = $Global:CONFIG.Devices['gumboz'].Description
-                Details = $processorInfo
-                Supported = $true
-            }
-        }
-
-        # Extract Intel generation
-        if ($processorName -match "Intel.*i[3579]-(\d{4,5})|Intel.*i[3579]\s+(\d{4,5})") {
-            $model = if ($matches[1]) { $matches[1] } else { $matches[2] }
-            $generation = [int]($model.ToString()[0])
-            
-            $device = switch ($generation) {
-                { $_ -le 9 } { "shyvana" }
-                10 { "jinlon" }
-                default { "voxel" }
-            }
-
-            Write-InstallLog "Intel $generation`th Gen processor detected - using $device device" -Level 'Info'
-            
-            return @{
-                Type = "Intel"
-                Generation = $generation
-                Device = $device
-                Name = $processorName
-                Description = $Global:CONFIG.Devices[$device].Description
-                Details = $processorInfo
-                Supported = $true
-            }
-        }
-
-        Write-InstallLog "Unsupported processor detected: $processorName" -Level 'Warning'
-        return @{
-            Type = "Unknown"
-            Name = $processorName
-            Details = $processorInfo
+        # Create result object with IsValid property
+        $result = New-Object PSObject -Property @{
+            IsValid = $false
+            Name = ""
+            Manufacturer = ""
+            Device = ""
             Supported = $false
         }
+
+        # Get processor information
+        $processorInfo = Get-CimInstance Win32_Processor | Select-Object -First 1
+        if (-not $processorInfo) {
+            throw "Failed to get processor information"
+        }
+
+        $result.Name = $processorInfo.Name
+        $result.Manufacturer = $processorInfo.Manufacturer
+
+        # Determine device based on processor
+        if ($processorInfo.Manufacturer -like "*AMD*") {
+            Write-InstallLog "AMD processor detected - using gumboz device" -Level 'Info'
+            $result.Device = "gumboz"
+            $result.Supported = $true
+        }
+        elseif ($processorInfo.Manufacturer -like "*Intel*") {
+            Write-InstallLog "Intel processor detected - using rammus device" -Level 'Info'
+            $result.Device = "rammus"
+            $result.Supported = $true
+        }
+        else {
+            Write-InstallLog "Unsupported processor manufacturer: $($processorInfo.Manufacturer)" -Level 'Warning'
+            $result.Device = "unknown"
+            $result.Supported = $false
+        }
+
+        $result.IsValid = $true
+        return $result
     }
     catch {
-        Write-InstallLog "Failed to detect processor: $_" -Level 'Error'
-        throw
+        Write-InstallLog "Error detecting processor: $_" -Level 'Error'
+        return $result  # Returns object with IsValid = false
     }
 }
 
@@ -1462,7 +1440,14 @@ function Start-ChromeOSInstallation {
                         
                         # Get processor and compatible build
                         $processor = Get-SystemProcessor
-                        Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
+                        if (-not $processor.IsValid) {
+							throw "Failed to detect processor information"
+						}
+						if (-not $processor.Supported) 
+							throw "Unsupported processor: $($processor.Name)"
+						}
+
+						Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
                         Write-Host "Compatible with ChromeOS device: $($processor.Device)" -ForegroundColor Cyan
 
                         # Get available disks
