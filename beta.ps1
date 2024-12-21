@@ -293,8 +293,9 @@ function Show-Banner {
 function Test-SystemRequirements {
     Write-InstallLog "Checking system requirements..." -Level 'Info'
     
+    # Create requirements object with IsValid property
     $requirements = @{
-        IsValid = $true
+        IsValid = $true  # Initialize to true
         Details = @{
             AdminRights = @{
                 Pass = $false
@@ -341,15 +342,54 @@ function Test-SystemRequirements {
         $requirements.Details.Architecture.Current = $arch
         $requirements.Details.Architecture.Pass = $arch -eq "64-bit"
 
-        # Update overall validity
-        $requirements.IsValid = $requirements.Details.Values | ForEach-Object { $_.Pass } | Where-Object { $_ -eq $false } | Measure-Object | ForEach-Object { $_.Count -eq 0 }
+        # Update overall validity - if any requirement fails, IsValid becomes false
+        $requirements.IsValid = -not ($requirements.Details.Values | Where-Object { -not $_.Pass })
 
-        return $requirements
+        return [PSCustomObject]$requirements  # Convert to PSCustomObject to ensure property access works
     }
     catch {
         Write-InstallLog "Error checking system requirements: $_" -Level 'Error'
         $requirements.IsValid = $false
-        return $requirements
+        return [PSCustomObject]$requirements  # Convert to PSCustomObject to ensure property access works
+    }
+}
+
+function Test-Prerequisites {
+    Write-InstallLog "Checking prerequisites..." -Level 'Info'
+    
+    try {
+        # Check system requirements first
+        $requirements = Test-SystemRequirements
+        
+        if (-not $requirements.IsValid) {
+            Write-Host "`nSystem requirements not met:" -ForegroundColor Red
+            foreach ($req in $requirements.Details.GetEnumerator()) {
+                $status = if ($req.Value.Pass) { "PASS" } else { "FAIL" }
+                $color = if ($req.Value.Pass) { "Green" } else { "Red" }
+                Write-Host "$($req.Key): [$status] - Required: $($req.Value.Required), Current: $($req.Value.Current)" -ForegroundColor $color
+            }
+            throw "System requirements not met. Please check the requirements and try again."
+        }
+
+        # Check processor compatibility
+        Write-InstallLog "Detecting system processor..." -Level 'Info'
+        $processor = Get-SystemProcessor
+        if (-not $processor.Supported) {
+            throw "Unsupported processor: $($processor.Name)"
+        }
+
+        # Check available disks
+        Write-InstallLog "Scanning for available disks..." -Level 'Info'
+        $disks = Get-AvailableDisks
+        if (-not $disks) {
+            throw "No suitable disks found for installation."
+        }
+
+        return $true
+    }
+    catch {
+        Write-InstallLog "Prerequisites check failed: $_" -Level 'Error'
+        return $false
     }
 }
 # Error handling wrapper
