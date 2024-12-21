@@ -1648,28 +1648,39 @@ function Start-ChromeOSInstallation {
                 '3' {
                     try {
                         Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
-                        $requirements = Test-SystemRequirements
                         
-                        Write-Host "`nSystem Requirements Check Results:" -ForegroundColor Yellow
+                        # Admin Rights Check
+                        $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
+                        $isAdmin = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+                        Write-Host "`nAdmin Rights: $(if ($isAdmin) { "[PASS]" } else { "[FAIL]" })" -ForegroundColor $(if ($isAdmin) { "Green" } else { "Red" })
                         
-                        foreach ($check in $requirements.Checks) {
-                            $status = if ($check.Pass) { "PASS" } else { "FAIL" }
-                            $color = if ($check.Pass) { "Green" } else { "Red" }
-                            Write-Host "$($check.Name): [$status] - Required: $($check.Required), Current: $($check.Current)" -ForegroundColor $color
-                        }
-
+                        # RAM Check
+                        $ram = [math]::Round((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB, 2)
+                        $ramOk = $ram -ge 4
+                        Write-Host "RAM: $(if ($ramOk) { "[PASS]" } else { "[FAIL]" }) - Current: ${ram}GB (Required: 4GB)" -ForegroundColor $(if ($ramOk) { "Green" } else { "Red" })
+                        
+                        # Disk Space Check
+                        $freeSpace = [math]::Round((Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'").FreeSpace / 1GB, 2)
+                        $diskOk = $freeSpace -ge 16
+                        Write-Host "Disk Space: $(if ($diskOk) { "[PASS]" } else { "[FAIL]" }) - Current: ${freeSpace}GB (Required: 16GB)" -ForegroundColor $(if ($diskOk) { "Green" } else { "Red" })
+                        
+                        # Architecture Check
+                        $arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
+                        $archOk = $arch -eq "64-bit"
+                        Write-Host "Architecture: $(if ($archOk) { "[PASS]" } else { "[FAIL]" }) - Current: $arch (Required: 64-bit)" -ForegroundColor $(if ($archOk) { "Green" } else { "Red" })
+                        
                         # Overall Status
-                        Write-Host "`nOverall Status: $(if ($requirements.IsValid) { "PASS" } else { "FAIL" })" -ForegroundColor $(if ($requirements.IsValid) { "Green" } else { "Red" })
+                        $allPassed = $isAdmin -and $ramOk -and $diskOk -and $archOk
+                        Write-Host "`nOverall Status: $(if ($allPassed) { "[PASS]" } else { "[FAIL]" })" -ForegroundColor $(if ($allPassed) { "Green" } else { "Red" })
                         
-                        # Show processor compatibility
+                        # Processor Compatibility
                         Write-Host "`nChecking processor compatibility..." -ForegroundColor Cyan
                         $processor = Get-SystemProcessor
                         if ($processor.IsValid) {
                             Write-Host "Processor: $($processor.Name)" -ForegroundColor Yellow
                             Write-Host "Compatible Device: $($processor.Device)" -ForegroundColor Yellow
-                            Write-Host "Supported: $(if ($processor.Supported) { 'Yes' } else { 'No' })" -ForegroundColor $(if ($processor.Supported) { 'Green' } else { 'Red' })
-                        }
-                        else {
+                            Write-Host "Supported: $(if ($processor.Supported) { "Yes" } else { "No" })" -ForegroundColor $(if ($processor.Supported) { "Green" } else { "Red" })
+                        } else {
                             Write-Host "Failed to detect processor information" -ForegroundColor Red
                         }
                     }
