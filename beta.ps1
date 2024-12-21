@@ -1640,7 +1640,7 @@ function Start-ChromeOSInstallation {
                 '3' {
                     try {
                         Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
-                        $requirements = Test-SystemRequirements()
+                        $requirements = Test-SystemRequirements    
                         
                         if ($requirements -and $requirements.Details) {
                             Write-Host "`nSystem Requirements Check Results:" -ForegroundColor Yellow
