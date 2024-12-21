@@ -26,6 +26,10 @@ Write-Host "User: $env:USERNAME" -ForegroundColor Gray
 Write-Host "Directory: $PWD" -ForegroundColor Gray
 Write-Host "========================================" -ForegroundColor Cyan
 
+# Set console encoding to UTF-8
+[Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+$Host.UI.RawUI.WindowTitle = "ChromeOS Installer"
+
 # Check if running as administrator
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 if (-not $isAdmin) {
@@ -267,19 +271,40 @@ function Write-InstallLog {
 # Script banner display
 function Show-Banner {
     $banner = @"
-╔════════════════════════════════════════════════════════════╗
-║                 ChromeOS Installer v$($Global:SCRIPT_VERSION)                  ║
-║                                                            ║
-║  Current Time (UTC) : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")        ║
-║  User               : $($script:metadata.UserName)         ║
-║  Computer          : $($script:metadata.ComputerName)     ║
-║                                                            ║
-║  Author: bobanilic                                        ║
-║  Last Updated: $($Global:SCRIPT_DATE)                     ║
-╚════════════════════════════════════════════════════════════╝
++====================================================+
+|                ChromeOS Installer v$($Global:SCRIPT_VERSION)                |
+|                                                    |
+|  Current Time (UTC) : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")    |
+|  User               : $($script:metadata.UserName.PadRight(20)) |
+|  Computer           : $($script:metadata.ComputerName.PadRight(20)) |
+|                                                    |
+|  Author: bobanilic                                |
+|  Last Updated: $($Global:SCRIPT_DATE)                           |
++====================================================+
 "@
     Write-Host $banner -ForegroundColor Cyan
     Write-InstallLog "Script started - $($script:metadata | ConvertTo-Json)" -Level 'Debug'
+}
+
+function Show-InstallationMenu {
+    $menu = @"
++====================================================+
+|              ChromeOS Installation Options           |
++====================================================+
+| 1. Automatic Installation (Recommended)              |
+| 2. Custom Installation                              |
+| 3. Verify System Requirements                       |
+| 4. Show Available Disks                             |
+| 5. Exit                                            |
++====================================================+
+"@
+    Write-Host $menu -ForegroundColor Cyan
+    
+    do {
+        $choice = Read-Host "Select an option (1-5)"
+    } while ($choice -notin '1','2','3','4','5')
+    
+    return $choice
 }
 
 # System requirements validation
