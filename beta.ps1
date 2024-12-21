@@ -623,84 +623,68 @@ function Get-ChromeOSBuilds {
 }
 
 function Select-ChromeOSBuild {
-    param(
-        [Parameter(Mandatory=$false)]
-        [string]$RecoveryUrl,
-        
-        [Parameter(Mandatory=$false)]
+    param (
         [switch]$Interactive,
-        
-        [Parameter(Mandatory=$false)]
         [switch]$ForceLatest
     )
-    
+
     try {
-        if ($RecoveryUrl) {
-            Write-InstallLog "Using provided recovery URL: $RecoveryUrl" -Level 'Info'
-            return @{
-                Version = "Custom"
-                DownloadUrl = $RecoveryUrl
-                ReleaseDate = Get-Date
-                IsCustom = $true
-            }
+        # Create result object with IsValid property
+        $result = New-Object PSObject -Property @{
+            IsValid = $false
+            DownloadUrl = ""
+            BuildInfo = $null
         }
 
-        # Detect processor and compatible device
+        # Get processor info
         $processor = Get-SystemProcessor
         if (-not $processor.Supported) {
-            throw "Unsupported processor: $($processor.Name)"
+            throw "Unsupported processor detected"
         }
 
-        Write-InstallLog "System compatible with ChromeOS device: $($processor.Device) ($($processor.Description))" -Level 'Info'
+        # Get available builds based on processor
+        $builds = Get-ChromeOSBuilds -Device $processor.Device
+        if (-not $builds -or $builds.Count -eq 0) {
+            throw "No builds found for device: $($processor.Device)"
+        }
 
-        # Fetch latest builds
-        $builds = Get-ChromeOSBuilds -Device $processor.Device -UseCache:(-not $ForceLatest)
-        
-        # Display available builds
-        Write-Host "`nAvailable ChromeOS builds for $($processor.Device):" -ForegroundColor Cyan
-        $builds | Format-Table Version, ReleaseDate, Size, Channel -AutoSize
-
-        $selectedBuild = if ($ForceLatest) {
-            $builds[0]
+        if ($ForceLatest) {
+            # Get latest build
+            $selectedBuild = $builds | Select-Object -First 1
+            Write-Host "Selected latest build: $($selectedBuild.Version)" -ForegroundColor Cyan
         }
         elseif ($Interactive) {
+            # Show available builds
+            Write-Host "`nAvailable ChromeOS builds for $($processor.Device):" -ForegroundColor Yellow
+            for ($i = 0; $i -lt [Math]::Min($builds.Count, 5); $i++) {
+                Write-Host "$($i + 1). Version: $($builds[$i].Version) - $($builds[$i].Channel)" -ForegroundColor Cyan
+            }
+
+            # Let user select a build
             do {
-                Write-Host "`nSelect a build number (1-$($builds.Count)) or press Enter for latest: " -NoNewline -ForegroundColor Yellow
-                $selection = Read-Host
-                
-                if ([string]::IsNullOrWhiteSpace($selection)) {
-                    $builds[0]
+                $selection = Read-Host "`nSelect a build (1-$([Math]::Min($builds.Count, 5)))"
+                if ($selection -match '^\d+$' -and [int]$selection -ge 1 -and [int]$selection -le [Math]::Min($builds.Count, 5)) {
+                    $selectedBuild = $builds[$selection - 1]
                     break
                 }
-                elseif ($selection -match '^\d+$' -and [int]$selection -ge 1 -and [int]$selection -le $builds.Count) {
-                    $builds[[int]$selection - 1]
-                    break
-                }
-                else {
-                    Write-Host "Invalid selection. Please try again." -ForegroundColor Red
-                }
+                Write-Host "Invalid selection. Please try again." -ForegroundColor Red
             } while ($true)
         }
         else {
-            $builds[0]
+            $selectedBuild = $builds | Select-Object -First 1
         }
 
-        Write-InstallLog "Selected build: $($selectedBuild.Version) (Released: $($selectedBuild.ReleaseDate))" -Level 'Success'
-        
-        return @{
-            Version = $selectedBuild.Version
-            DownloadUrl = $selectedBuild.DownloadUrl
-            ReleaseDate = $selectedBuild.ReleaseDate
-            Size = $selectedBuild.Size
-            Channel = $selectedBuild.Channel
-            IsCustom = $false
-            Device = $processor.Device
-            ProcessorType = $processor.Type
+        if ($selectedBuild) {
+            $result.IsValid = $true
+            $result.DownloadUrl = $selectedBuild.DownloadUrl
+            $result.BuildInfo = $selectedBuild
         }
+
+        return $result
     }
     catch {
-        Write-InstallLog "Failed to select ChromeOS build: $_" -Level 'Error'
-        throw
+        Write-InstallLog "Error selecting ChromeOS build: $_" -Level 'Error'
+        return $result  # Returns object with IsValid = false
     }
 }
 # ChromeOS image download and verification functions
@@ -1539,15 +1523,15 @@ function Start-ChromeOSInstallation {
 
                         # Get latest build
                         Write-Host "`nFetching latest ChromeOS build..." -ForegroundColor Cyan
-                        $build = Select-ChromeOSBuild -ForceLatest
+                        $buildResult = Select-ChromeOSBuild -ForceLatest
                         
-                        if (-not $build) {
+                        if (-not $buildResult.IsValid) {
                             throw "Failed to get ChromeOS build"
                         }
 
                         # Download image
                         Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
-                        $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+                        $imagePath = Get-ChromeOSImage -Url $buildResult.DownloadUrl
                         
                         if (-not $imagePath) {
                             throw "Failed to download ChromeOS image"
