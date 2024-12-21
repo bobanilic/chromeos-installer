@@ -293,66 +293,68 @@ function Show-Banner {
 function Test-SystemRequirements {
     Write-InstallLog "Checking system requirements..." -Level 'Info'
     
-    # Create a custom object with IsValid property
-    $requirements = New-Object PSObject -Property @{
-        IsValid = $true
-        Details = @{
-            AdminRights = @{
-                Pass = $false
-                Required = "Administrator"
-                Current = ""
-            }
-            RAM = @{
-                Pass = $false
-                Required = "4GB"
-                Current = ""
-            }
-            DiskSpace = @{
-                Pass = $false
-                Required = "16GB"
-                Current = ""
-            }
-            Architecture = @{
-                Pass = $false
-                Required = "64-bit"
-                Current = ""
+    try {
+        # Create result object with both IsValid and Details properties
+        $result = @{
+            IsValid = $false
+            Details = @{
+                AdminRights = @{
+                    Pass = $false
+                    Required = "Administrator"
+                    Current = ""
+                }
+                RAM = @{
+                    Pass = $false
+                    Required = "4GB"
+                    Current = ""
+                }
+                DiskSpace = @{
+                    Pass = $false
+                    Required = "16GB"
+                    Current = ""
+                }
+                Architecture = @{
+                    Pass = $false
+                    Required = "64-bit"
+                    Current = ""
+                }
             }
         }
-    }
 
-    try {
         # Check Admin Rights
         $currentPrincipal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
         $adminStatus = $currentPrincipal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-        $requirements.Details.AdminRights.Current = if ($adminStatus) { "Administrator" } else { "User" }
-        $requirements.Details.AdminRights.Pass = $adminStatus
+        $result.Details.AdminRights.Current = if ($adminStatus) { "Administrator" } else { "User" }
+        $result.Details.AdminRights.Pass = $adminStatus
 
         # Check RAM
         $ram = (Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1GB
-        $requirements.Details.RAM.Current = "$([math]::Round($ram, 2))GB"
-        $requirements.Details.RAM.Pass = $ram -ge 4
+        $result.Details.RAM.Current = "$([math]::Round($ram, 2))GB"
+        $result.Details.RAM.Pass = $ram -ge 4
 
         # Check Disk Space
         $disk = Get-CimInstance Win32_LogicalDisk -Filter "DeviceID='C:'"
         $freeSpace = $disk.FreeSpace / 1GB
-        $requirements.Details.DiskSpace.Current = "$([math]::Round($freeSpace, 2))GB"
-        $requirements.Details.DiskSpace.Pass = $freeSpace -ge 16
+        $result.Details.DiskSpace.Current = "$([math]::Round($freeSpace, 2))GB"
+        $result.Details.DiskSpace.Pass = $freeSpace -ge 16
 
         # Check Architecture
         $arch = (Get-CimInstance Win32_OperatingSystem).OSArchitecture
-        $requirements.Details.Architecture.Current = $arch
-        $requirements.Details.Architecture.Pass = $arch -eq "64-bit"
+        $result.Details.Architecture.Current = $arch
+        $result.Details.Architecture.Pass = $arch -eq "64-bit"
 
-        # Set IsValid based on all requirements passing
-        $requirements.IsValid = -not ($requirements.Details.Values | Where-Object { -not $_.Pass })
+        # Set overall IsValid based on all requirements passing
+        $result.IsValid = -not ($result.Details.Values | Where-Object { -not $_.Pass })
 
-        Write-InstallLog "System requirements check completed. IsValid: $($requirements.IsValid)" -Level 'Info'
-        return $requirements
+        Write-InstallLog "System requirements check completed. IsValid: $($result.IsValid)" -Level 'Info'
+        return $result
     }
     catch {
         Write-InstallLog "Error checking system requirements: $_" -Level 'Error'
-        $requirements.IsValid = $false
-        return $requirements
+        return @{
+            IsValid = $false
+            Details = @{}
+        }
     }
 }
 
@@ -1516,6 +1518,209 @@ function Select-ChromeOSBuild {
         }
     }
 }
+function Start-ChromeOSInstallation {
+    try {
+        Write-Host "Environment check passed!" -ForegroundColor Green
+        Write-Host "Starting installation...`n" -ForegroundColor Cyan
+        
+        # Initialize working environment
+        if (-not (Initialize-WorkingEnvironment)) {
+            throw "Failed to initialize working environment"
+        }
 
+        # Show banner once at the start
+        Show-Banner
+        
+        # Main menu loop
+        do {
+            $choice = Read-Host "Select an option (1-5)"
+            
+            switch ($choice) {
+                '1' {
+                    Write-InstallLog "Starting automatic installation process..." -Level 'Info'
+                    try {
+                        if (-not (Test-Prerequisites)) {
+                            throw "Prerequisites check failed"
+                        }
+                        
+                        # Get processor and compatible build
+                        $processor = Get-SystemProcessor
+                        if (-not $processor.IsValid) {
+                            throw "Failed to detect processor information"
+                        }
+                        if (-not $processor.Supported) {
+                            throw "Unsupported processor: $($processor.Name)"
+                        }
+
+                        Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
+                        Write-Host "Compatible with ChromeOS device: $($processor.Device)" -ForegroundColor Cyan
+
+                        # Get available disks
+                        $diskInfo = Get-AvailableDisks
+                        if (-not $diskInfo.IsValid -or $diskInfo.Disks.Count -eq 0) {
+                            throw "No suitable disks found for installation"
+                        }
+
+                        # Get latest build
+                        Write-Host "`nFetching latest ChromeOS build..." -ForegroundColor Cyan
+                        $buildResult = Select-ChromeOSBuild -ForceLatest
+                        if (-not $buildResult.IsValid) {
+                            throw "Failed to get ChromeOS build"
+                        }
+
+                        # Download image
+                        Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
+                        $imagePath = Get-ChromeOSImage -Url $buildResult.DownloadUrl
+                        if (-not $imagePath) {
+                            throw "Failed to download ChromeOS image"
+                        }
+
+                        Write-Host "Auto installation complete!" -ForegroundColor Green
+                    }
+                    catch {
+                        Write-InstallLog "Automatic installation failed: $_" -Level 'Error'
+                        throw
+                    }
+                    finally {
+                        Read-Host "`nPress Enter to continue"
+                        Show-Banner
+                    }
+                }
+                
+                '2' {
+                    Write-InstallLog "Starting custom installation process..." -Level 'Info'
+                    try {
+                        if (-not (Test-Prerequisites)) {
+                            throw "Prerequisites check failed"
+                        }
+                        
+                        # Get processor info
+                        $processor = Get-SystemProcessor
+                        if (-not $processor.IsValid) {
+                            throw "Failed to detect processor information"
+                        }
+                        if (-not $processor.Supported) {
+                            throw "Unsupported processor: $($processor.Name)"
+                        }
+
+                        Write-Host "`nDetected processor: $($processor.Name)" -ForegroundColor Cyan
+                        Write-Host "Compatible with ChromeOS device: $($processor.Device)" -ForegroundColor Cyan
+
+                        # Get available disks
+                        $diskInfo = Get-AvailableDisks
+                        if (-not $diskInfo.IsValid -or $diskInfo.Disks.Count -eq 0) {
+                            throw "No suitable disks found for installation"
+                        }
+
+                        # Interactive build selection
+                        Write-Host "`nSelecting ChromeOS build..." -ForegroundColor Cyan
+                        $buildResult = Select-ChromeOSBuild -Interactive
+                        if (-not $buildResult.IsValid) {
+                            throw "Failed to select ChromeOS build"
+                        }
+
+                        # Download image
+                        Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
+                        $imagePath = Get-ChromeOSImage -Url $buildResult.DownloadUrl
+                        if (-not $imagePath) {
+                            throw "Failed to download ChromeOS image"
+                        }
+
+                        Write-Host "Custom installation complete!" -ForegroundColor Green
+                    }
+                    catch {
+                        Write-InstallLog "Custom installation failed: $_" -Level 'Error'
+                        throw
+                    }
+                    finally {
+                        Read-Host "`nPress Enter to continue"
+                        Show-Banner
+                    }
+                }
+                
+                '3' {
+                    try {
+                        Write-Host "`nVerifying system requirements..." -ForegroundColor Cyan
+                        $requirements = Test-SystemRequirements
+                        Write-Host "`nSystem Requirements Check Results:" -ForegroundColor Yellow
+                        
+                        if ($null -ne $requirements.Details -and $requirements.Details.Count -gt 0) {
+                            foreach ($item in $requirements.Details.GetEnumerator()) {
+                                $status = if ($item.Value.Pass) { "PASS" } else { "FAIL" }
+                                $color = if ($item.Value.Pass) { "Green" } else { "Red" }
+                                Write-Host "$($item.Key): [$status] - Required: $($item.Value.Required), Current: $($item.Value.Current)" -ForegroundColor $color
+                            }
+                        } 
+                        else {
+                            Write-Host "Failed to get system requirements details" -ForegroundColor Red
+                        }
+                        
+                        # Also show processor compatibility
+                        Write-Host "`nChecking processor compatibility..." -ForegroundColor Cyan
+                        $processor = Get-SystemProcessor
+                        if ($processor.IsValid) {
+                            Write-Host "Processor: $($processor.Name)" -ForegroundColor Yellow
+                            Write-Host "Compatible Device: $($processor.Device)" -ForegroundColor Yellow
+                            Write-Host "Supported: $(if ($processor.Supported) { 'Yes' } else { 'No' })" -ForegroundColor $(if ($processor.Supported) { 'Green' } else { 'Red' })
+                        }
+                        else {
+                            Write-Host "Failed to detect processor information" -ForegroundColor Red
+                        }
+                    }
+                    catch {
+                        Write-InstallLog "System requirements check failed: $_" -Level 'Error'
+                        Write-Host "Failed to check system requirements" -ForegroundColor Red
+                    }
+                    finally {
+                        Read-Host "`nPress Enter to continue"
+                        Show-Banner
+                    }
+                }
+                
+                '4' {
+                    try {
+                        Write-Host "`nScanning for available disks..." -ForegroundColor Cyan
+                        $diskInfo = Get-AvailableDisks
+                        if ($diskInfo.IsValid -and $diskInfo.Disks.Count -gt 0) {
+                            Write-Host "`nAvailable Disks:" -ForegroundColor Yellow
+                            $diskInfo.Disks | Format-Table -AutoSize
+                        }
+                        else {
+                            Write-Host "`nNo suitable disks found!" -ForegroundColor Red
+                            Write-Host "Requirements:" -ForegroundColor Yellow
+                            Write-Host "- Minimum 16GB size" -ForegroundColor Gray
+                            Write-Host "- Not boot/system disk" -ForegroundColor Gray
+                        }
+                    }
+                    catch {
+                        Write-InstallLog "Disk scan failed: $_" -Level 'Error'
+                        Write-Host "Failed to scan for available disks" -ForegroundColor Red
+                    }
+                    finally {
+                        Read-Host "`nPress Enter to continue"
+                        Show-Banner
+                    }
+                }
+                
+                '5' {
+                    Write-Host "Exiting..." -ForegroundColor Yellow
+                    exit 0
+                }
+                
+                default {
+                    Write-Host "`nInvalid option. Please select 1-5." -ForegroundColor Red
+                    Start-Sleep -Seconds 2
+                    Show-Banner
+                }
+            }
+        } while ($true)
+    }
+    catch {
+        Write-InstallLog "Installation failed: $_" -Level 'Error'
+        Write-Host "`nInstallation failed. Check the log file for details:" -ForegroundColor Red
+        Write-Host $script:metadata.LogFile -ForegroundColor Yellow
+        exit 1
+    }
+}
 # Start the installation
 Start-ChromeOSInstallation
