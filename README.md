@@ -22,8 +22,23 @@ This repository contains a PowerShell script designed to automate the installati
    ```powershell
    .\install-chromeos.ps1
 
-## File Structure:
-<img width="189" alt="{9E8CD945-8F28-4665-A985-48BAAFA8AB78}" src="https://github.com/user-attachments/assets/c9e1611d-0dea-4f6c-ab15-e1158ef8aa65">
+### Directory Structure
+
+The following is the directory structure required for the script to work:
+
+```plaintext
+C:\
+├── cygwin64\               # Default Cygwin installation directory
+│   ├── bin\                # Contains required tools
+│   │   ├── bash.exe
+│   │   ├── dd.exe
+│   │   ├── pv.exe
+│   │   ├── tar.exe
+│   │   └── unzip.exe
+├── ChromeOS_Installer\     # Create this directory
+│   ├── install.ps1         # The main script
+│   └── config\             # Created automatically by script
+
 
 
 
