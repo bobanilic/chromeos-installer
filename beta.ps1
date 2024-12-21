@@ -270,10 +270,9 @@ function Write-InstallLog {
 
 # Script banner display
 function Show-Banner {
-    Clear-Host  # Clear the screen first
     Write-Host ""
     Write-Host "Current Date and Time (UTC): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
-    Write-Host "Current User's Login: $($script:metadata.UserName)" -ForegroundColor Gray
+    Write-Host "Current User's Login: $env:USERNAME" -ForegroundColor Gray  # Using environment variable instead of metadata
     Write-Host ""
     $banner = @"
 +====================================================+
@@ -285,6 +284,7 @@ function Show-Banner {
 | 4. Show Available Disks                             |
 | 5. Exit                                             |
 +====================================================+
+
 "@
     Write-Host $banner -ForegroundColor Cyan
 }
@@ -293,9 +293,8 @@ function Show-Banner {
 function Test-SystemRequirements {
     Write-InstallLog "Checking system requirements..." -Level 'Info'
     
-    # Create requirements object with IsValid property
-    $requirements = @{
-        IsValid = $true  # Initialize to true
+    $requirements = [PSCustomObject]@{
+        IsValid = $true
         Details = @{
             AdminRights = @{
                 Pass = $false
@@ -342,15 +341,15 @@ function Test-SystemRequirements {
         $requirements.Details.Architecture.Current = $arch
         $requirements.Details.Architecture.Pass = $arch -eq "64-bit"
 
-        # Update overall validity - if any requirement fails, IsValid becomes false
+        # Update IsValid based on all checks
         $requirements.IsValid = -not ($requirements.Details.Values | Where-Object { -not $_.Pass })
 
-        return [PSCustomObject]$requirements  # Convert to PSCustomObject to ensure property access works
+        return $requirements
     }
     catch {
         Write-InstallLog "Error checking system requirements: $_" -Level 'Error'
         $requirements.IsValid = $false
-        return [PSCustomObject]$requirements  # Convert to PSCustomObject to ensure property access works
+        return $requirements
     }
 }
 
@@ -368,21 +367,23 @@ function Test-Prerequisites {
                 $color = if ($req.Value.Pass) { "Green" } else { "Red" }
                 Write-Host "$($req.Key): [$status] - Required: $($req.Value.Required), Current: $($req.Value.Current)" -ForegroundColor $color
             }
-            throw "System requirements not met. Please check the requirements and try again."
+            return $false
         }
 
         # Check processor compatibility
         Write-InstallLog "Detecting system processor..." -Level 'Info'
         $processor = Get-SystemProcessor
         if (-not $processor.Supported) {
-            throw "Unsupported processor: $($processor.Name)"
+            Write-Host "Unsupported processor: $($processor.Name)" -ForegroundColor Red
+            return $false
         }
 
         # Check available disks
         Write-InstallLog "Scanning for available disks..." -Level 'Info'
         $disks = Get-AvailableDisks
         if (-not $disks) {
-            throw "No suitable disks found for installation."
+            Write-Host "No suitable disks found for installation." -ForegroundColor Red
+            return $false
         }
 
         return $true
@@ -1523,12 +1524,19 @@ function Start-ChromeOSInstallation {
                         # Get latest build
                         Write-Host "`nFetching latest ChromeOS build..." -ForegroundColor Cyan
                         $build = Select-ChromeOSBuild -ForceLatest
+						
+						if (-not $build) {
+							throw "Failed to get ChromeOS build"
 
                         # Download image
                         Write-Host "`nDownloading ChromeOS image..." -ForegroundColor Cyan
                         $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+						
+						if (-not $imagePath) {
+							throw "Failed to download ChromeOS image"
 
                         Write-Host "Auto installation complete!" -ForegroundColor Green
+						Read-Host "`nPress Enter to continue"
                         Show-Banner
                     }
                     catch {
