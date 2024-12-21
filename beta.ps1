@@ -1402,13 +1402,30 @@ finally {
 Write-Host "Script completed!" -ForegroundColor Green
 Read-Host "Press Enter to exit"
 
-# Main execution flow
+# Main menu function
+function Show-InstallationMenu {
+    Write-Host "`nChrome OS Installation Options:" -ForegroundColor Cyan
+    Write-Host "1. Start Automatic Installation" -ForegroundColor Yellow
+    Write-Host "2. Start Custom Installation" -ForegroundColor Yellow
+    Write-Host "3. Exit" -ForegroundColor Yellow
+    Write-Host ""
+    
+    do {
+        $choice = Read-Host "Select an option (1-3)"
+    } while ($choice -notin '1','2','3')
+    
+    return $choice
+}
+
+# Main execution block
 function Start-ChromeOSInstallation {
     try {
         Show-Banner
         
         # Initialize working environment
-        Initialize-WorkingEnvironment
+        if (-not (Initialize-WorkingEnvironment)) {
+            throw "Failed to initialize working environment"
+        }
 
         # Check system requirements
         $requirements = Test-SystemRequirements
@@ -1422,19 +1439,21 @@ function Start-ChromeOSInstallation {
         switch ($choice) {
             '1' { 
                 Write-Host "`nStarting automatic installation..." -ForegroundColor Cyan
-                Start-AutomaticInstallation 
+                $build = Select-ChromeOSBuild -ForceLatest
+                $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+                # Continue with installation...
             }
             '2' { 
                 Write-Host "`nStarting custom installation..." -ForegroundColor Cyan
-                Start-CustomInstallation 
+                $build = Select-ChromeOSBuild -Interactive
+                $imagePath = Get-ChromeOSImage -Url $build.DownloadUrl
+                # Continue with installation...
             }
             '3' { 
+                Write-Host "Exiting..." -ForegroundColor Yellow
                 exit 0 
             }
         }
-
-        Write-Host "`nInstallation completed successfully!" -ForegroundColor Green
-        Write-Host "You can now reboot your computer to start ChromeOS." -ForegroundColor Yellow
     }
     catch {
         Write-InstallLog "Installation failed: $_" -Level 'Error'
