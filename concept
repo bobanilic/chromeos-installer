@@ -1,0 +1,180 @@
+# Constants for ChromeOS GPT attributes and structures
+$GUID_TYPE_CHROMEOS_KERNEL = "FE3A2A5D-4F32-41A7-B725-ACCC3285A309"
+$GUID_TYPE_CHROMEOS_ROOT = "3CB8E202-3B7E-47DD-8A3C-7FF2A13CFCEC"
+
+# Create the necessary C# class to handle low-level disk access
+$DiskAccessCode = @"
+using System;
+using System.Runtime.InteropServices;
+using Microsoft.Win32.SafeHandles;
+
+public class DiskAccess
+{
+    // Win32 API constants
+    private const uint GENERIC_READ = 0x80000000;
+    private const uint GENERIC_WRITE = 0x40000000;
+    private const uint FILE_SHARE_READ = 0x1;
+    private const uint FILE_SHARE_WRITE = 0x2;
+    private const uint OPEN_EXISTING = 3;
+    private const uint IOCTL_DISK_GET_DRIVE_LAYOUT_EX = 0x00070050;
+    private const uint IOCTL_DISK_SET_DRIVE_LAYOUT_EX = 0x0007C050;
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern SafeFileHandle CreateFile(
+        string lpFileName,
+        uint dwDesiredAccess,
+        uint dwShareMode,
+        IntPtr lpSecurityAttributes,
+        uint dwCreationDisposition,
+        uint dwFlagsAndAttributes,
+        IntPtr hTemplateFile);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool DeviceIoControl(
+        SafeFileHandle hDevice,
+        uint dwIoControlCode,
+        IntPtr lpInBuffer,
+        uint nInBufferSize,
+        IntPtr lpOutBuffer,
+        uint nOutBufferSize,
+        out uint lpBytesReturned,
+        IntPtr lpOverlapped);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    public static extern bool CloseHandle(SafeFileHandle hObject);
+
+    // GPT structures
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PARTITION_INFORMATION_GPT
+    {
+        public Guid PartitionType;
+        public Guid PartitionId;
+        public ulong Attributes;
+        [MarshalAs(UnmanagedType.ByValArray, SizeConst = 36)]
+        public char[] Name;
+    }
+
+    public static SafeFileHandle OpenDisk(int diskNumber, bool readOnly = false)
+    {
+        string path = $"\\\\.\\PhysicalDrive{diskNumber}";
+        uint access = readOnly ? GENERIC_READ : (GENERIC_READ | GENERIC_WRITE);
+        uint share = readOnly ? FILE_SHARE_READ : (FILE_SHARE_READ | FILE_SHARE_WRITE);
+
+        return CreateFile(path, access, share, IntPtr.Zero, OPEN_EXISTING, 0, IntPtr.Zero);
+    }
+
+    public static bool SetPartitionAttributes(SafeFileHandle handle, int partitionNumber, ulong attributes)
+    {
+        // Implementation to set partition attributes
+        // This would involve reading the current GPT layout, modifying it, and writing it back
+        uint bytesReturned;
+        
+        // First read current layout
+        IntPtr layout = Marshal.AllocHGlobal(8192); // Adjust size as needed
+        try
+        {
+            if (!DeviceIoControl(handle, IOCTL_DISK_GET_DRIVE_LAYOUT_EX,
+                IntPtr.Zero, 0, layout, 8192, out bytesReturned, IntPtr.Zero))
+            {
+                return false;
+            }
+
+            // Modify the partition attributes
+            // Calculate offset to partition entry
+            int offset = 48 + (partitionNumber - 1) * Marshal.SizeOf<PARTITION_INFORMATION_GPT>();
+            IntPtr partitionEntry = IntPtr.Add(layout, offset);
+            
+            PARTITION_INFORMATION_GPT partInfo = 
+                Marshal.PtrToStructure<PARTITION_INFORMATION_GPT>(partitionEntry);
+            partInfo.Attributes = attributes;
+            Marshal.StructureToPtr(partInfo, partitionEntry, false);
+
+            // Write modified layout back
+            return DeviceIoControl(handle, IOCTL_DISK_SET_DRIVE_LAYOUT_EX,
+                layout, 8192, IntPtr.Zero, 0, out bytesReturned, IntPtr.Zero);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(layout);
+        }
+    }
+}
+"@
+
+# Add the C# class to PowerShell session
+Add-Type -TypeDefinition $DiskAccessCode
+
+function Set-ChromeOSPartitionFlags {
+    param (
+        [Parameter(Mandatory=$true)]
+        [int]$DiskNumber,
+        [Parameter(Mandatory=$true)]
+        [int]$PartitionNumber,
+        [Parameter(Mandatory=$true)]
+        [int]$Priority,
+        [Parameter(Mandatory=$true)]
+        [bool]$Successful,
+        [Parameter(Mandatory=$true)]
+        [bool]$Bootable
+    )
+
+    try {
+        # Open disk handle
+        $handle = [DiskAccess]::OpenDisk($DiskNumber, $false)
+        if ($handle.IsInvalid) {
+            throw "Failed to open disk $DiskNumber"
+        }
+
+        # Calculate ChromeOS attributes
+        # ChromeOS uses specific bit positions in the GPT attributes field:
+        # Bit 0: Bootable
+        # Bits 48-51: Priority (0-15)
+        # Bit 52: Successful
+        $attributes = [ulong]0
+        if ($Bootable) { $attributes = $attributes -bor 1uL }
+        $attributes = $attributes -bor ([ulong]($Priority -band 0xF) -shl 48)
+        if ($Successful) { $attributes = $attributes -bor (1uL -shl 52) }
+
+        # Set the attributes
+        $success = [DiskAccess]::SetPartitionAttributes($handle, $PartitionNumber, $attributes)
+        if (-not $success) {
+            throw "Failed to set partition attributes"
+        }
+
+        Write-Host "Successfully set ChromeOS partition flags:"
+        Write-Host "Priority: $Priority"
+        Write-Host "Successful: $Successful"
+        Write-Host "Bootable: $Bootable"
+    }
+    catch {
+        Write-Error "Error setting ChromeOS partition flags: $_"
+        throw
+    }
+    finally {
+        if ($handle -and -not $handle.IsInvalid) {
+            $handle.Close()
+        }
+    }
+}
+
+# Helper function to get partition number by GUID
+function Get-PartitionNumberByGuid {
+    param (
+        [Parameter(Mandatory=$true)]
+        [int]$DiskNumber,
+        [Parameter(Mandatory=$true)]
+        [string]$PartitionTypeGuid
+    )
+
+    $handle = [DiskAccess]::OpenDisk($DiskNumber, $true)
+    try {
+        # Implementation to scan GPT and find partition number
+        # This would involve reading the GPT and comparing GUIDs
+        # Return the matching partition number
+    }
+    finally {
+        if ($handle -and -not $handle.IsInvalid) {
+            $handle.Close()
+        }
+    }
+}
