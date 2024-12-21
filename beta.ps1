@@ -1408,3 +1408,48 @@ finally {
 
 Write-Host "Script completed!" -ForegroundColor Green
 Read-Host "Press Enter to exit"
+
+# Main execution flow
+function Start-ChromeOSInstallation {
+    try {
+        Show-Banner
+        
+        # Initialize working environment
+        Initialize-WorkingEnvironment
+
+        # Check system requirements
+        $requirements = Test-SystemRequirements
+        if (-not $requirements.IsValid) {
+            throw "System requirements not met. Please check the log for details."
+        }
+
+        # Show menu and get user choice
+        $choice = Show-InstallationMenu
+        
+        switch ($choice) {
+            '1' { 
+                Write-Host "`nStarting automatic installation..." -ForegroundColor Cyan
+                Start-AutomaticInstallation 
+            }
+            '2' { 
+                Write-Host "`nStarting custom installation..." -ForegroundColor Cyan
+                Start-CustomInstallation 
+            }
+            '3' { 
+                exit 0 
+            }
+        }
+
+        Write-Host "`nInstallation completed successfully!" -ForegroundColor Green
+        Write-Host "You can now reboot your computer to start ChromeOS." -ForegroundColor Yellow
+    }
+    catch {
+        Write-InstallLog "Installation failed: $_" -Level 'Error'
+        Write-Host "`nInstallation failed. Check the log file for details:" -ForegroundColor Red
+        Write-Host $script:metadata.LogFile -ForegroundColor Yellow
+        exit 1
+    }
+}
+
+# Start the installation
+Start-ChromeOSInstallation
