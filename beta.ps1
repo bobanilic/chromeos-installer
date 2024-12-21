@@ -271,16 +271,19 @@ function Write-InstallLog {
 
 # Script banner display
 function Show-Banner {
+    Write-Host ""
+    Write-Host "Current Date and Time (UTC): $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Gray
+    Write-Host "Current User's Login: $($script:metadata.UserName)" -ForegroundColor Gray
+    Write-Host ""
     $banner = @"
 +====================================================+
-|                ChromeOS Installer v$($Global:SCRIPT_VERSION)                |
-|                                                    |
-|  Current Time (UTC) : $(Get-Date -Format "yyyy-MM-dd HH:mm:ss")    |
-|  User               : $($script:metadata.UserName.PadRight(20)) |
-|  Computer           : $($script:metadata.ComputerName.PadRight(20)) |
-|                                                    |
-|  Author: bobanilic                                |
-|  Last Updated: $($Global:SCRIPT_DATE)                           |
+|              ChromeOS Installer v$($Global:SCRIPT_VERSION)               |
++====================================================+
+| 1. Automatic Installation (Recommended)              |
+| 2. Custom Installation                              |
+| 3. Verify System Requirements                       |
+| 4. Show Available Disks                             |
+| 5. Exit                                             |
 +====================================================+
 "@
     Write-Host $banner -ForegroundColor Cyan
@@ -1453,9 +1456,9 @@ function Start-ChromeOSInstallation {
             throw "Failed to initialize working environment"
         }
 
-        # Main menu loop
+        # Get user choice
         do {
-            $choice = Show-InstallationMenu
+            $choice = Read-Host "Select an option (1-5)"
             
             switch ($choice) {
                 '1' { 
@@ -1480,6 +1483,7 @@ function Start-ChromeOSInstallation {
                         Write-Host "$($_.Key): [$status] - Required: $($_.Value.Required), Current: $($_.Value.Current)" -ForegroundColor $color
                     }
                     Read-Host "`nPress Enter to continue"
+                    Show-Banner
                 }
                 '4' {
                     Write-Host "`nScanning for available disks..." -ForegroundColor Cyan
@@ -1491,6 +1495,7 @@ function Start-ChromeOSInstallation {
                         Write-Host "No suitable disks found!" -ForegroundColor Red
                     }
                     Read-Host "`nPress Enter to continue"
+                    Show-Banner
                 }
                 '5' { 
                     Write-Host "Exiting..." -ForegroundColor Yellow
