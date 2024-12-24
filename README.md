@@ -1,4 +1,4 @@
-# Chrome OS Setup Script
+# Chrome OS Setup Script - WIP
 
 This repository contains a PowerShell script designed to automate the installation and setup of Chrome OS on Windows environments. The script bundles necessary components like Cygwin, `bash`, and `tar` to ensure a smooth and hassle-free installation process for Chrome OS development or testing on Windows.
 
